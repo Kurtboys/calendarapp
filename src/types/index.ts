@@ -32,6 +32,7 @@ export interface Goal {
   timeSpent?: number; // actual minutes spent
   scheduledTime?: number; // hour (0-23) when this goal is scheduled, undefined = unscheduled
   isRepeating?: boolean; // if true, this goal repeats daily
+  repeatingGoalId?: string; // links to the RepeatingGoal this was created from
 }
 
 export interface RepeatingGoal {

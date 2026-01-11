@@ -25,6 +25,7 @@ export function TodayView({ date }: TodayViewProps) {
     reorderGoals,
     scheduleGoal,
     unscheduleGoal,
+    toggleGoalRepeating,
     startGoal,
   } = useDayStart();
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -275,6 +276,7 @@ export function TodayView({ date }: TodayViewProps) {
                         index={index}
                         onClick={() => handleGoalClick(goal.id)}
                         onDelete={deleteGoal}
+                        onToggleRepeating={toggleGoalRepeating}
                         onDragStart={(e) => handleDragStart(e, index, goal.id)}
                         onDragOver={handleDragOver}
                         onDragEnd={handleDragEnd}
@@ -316,6 +318,7 @@ export function TodayView({ date }: TodayViewProps) {
                       index={index}
                       onClick={() => handleGoalClick(goal.id)}
                       onDelete={deleteGoal}
+                      onToggleRepeating={toggleGoalRepeating}
                       onDragStart={(e) => handleDragStart(e, index, goal.id)}
                       onDragOver={handleDragOver}
                       onDragEnd={handleDragEnd}

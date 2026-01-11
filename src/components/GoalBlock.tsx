@@ -7,6 +7,7 @@ interface GoalBlockProps {
   index: number;
   onClick: () => void;
   onDelete: (id: string) => void;
+  onToggleRepeating?: (id: string) => void;
   onDragStart: (e: React.DragEvent, index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDragEnd: () => void;
@@ -19,6 +20,7 @@ export function GoalBlock({
   index,
   onClick,
   onDelete,
+  onToggleRepeating,
   onDragStart,
   onDragOver,
   onDragEnd,
@@ -91,6 +93,27 @@ export function GoalBlock({
           Click to start timer
         </p>
       </div>
+
+      {/* Repeat button */}
+      {onToggleRepeating && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleRepeating(goal.id);
+          }}
+          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+          style={{
+            backgroundColor: goal.isRepeating ? 'var(--color-accent)' : 'var(--color-surface)',
+            color: goal.isRepeating ? 'white' : 'var(--color-text-tertiary)',
+            border: goal.isRepeating ? 'none' : '1px solid var(--color-border)',
+          }}
+          title={goal.isRepeating ? 'Repeats daily (click to stop)' : 'Click to repeat daily'}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      )}
 
       {/* Duration badge */}
       <div
