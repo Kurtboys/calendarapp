@@ -1,19 +1,22 @@
 import { useState, useCallback } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { TaskProvider } from './context/TaskContext';
+import { DayStartProvider, useDayStart } from './context/DayStartContext';
 import { Header } from './components/Header';
+import { StartDayOverlay } from './components/StartDayOverlay';
 import { TodayView, MultiDayView, MonthView, YearView } from './components/views';
 import type { ViewType } from './types';
-import { addDays, startOfWeek } from './utils/date';
+import { addDays, startOfWeek, getEffectiveDate } from './utils/date';
 import './index.css';
 
 function CalendarApp() {
+  const { isDayStarted } = useDayStart();
   const [currentView, setCurrentView] = useState<ViewType>('today');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => getEffectiveDate());
 
   const handleNavigate = useCallback((direction: 'prev' | 'next' | 'today') => {
     if (direction === 'today') {
-      setCurrentDate(new Date());
+      setCurrentDate(getEffectiveDate());
       return;
     }
 
@@ -51,9 +54,9 @@ function CalendarApp() {
 
   const handleViewChange = useCallback((view: ViewType) => {
     setCurrentView(view);
-    // Reset to today when changing views
+    // Reset to effective today when changing views
     if (view === 'today') {
-      setCurrentDate(new Date());
+      setCurrentDate(getEffectiveDate());
     }
   }, []);
 
@@ -76,6 +79,11 @@ function CalendarApp() {
     }
   };
 
+  // Show the "Start Day" overlay if day hasn't been started
+  if (!isDayStarted) {
+    return <StartDayOverlay />;
+  }
+
   return (
     <div
       className="h-screen flex flex-col"
@@ -97,9 +105,11 @@ function CalendarApp() {
 function App() {
   return (
     <ThemeProvider>
-      <TaskProvider>
-        <CalendarApp />
-      </TaskProvider>
+      <DayStartProvider>
+        <TaskProvider>
+          <CalendarApp />
+        </TaskProvider>
+      </DayStartProvider>
     </ThemeProvider>
   );
 }

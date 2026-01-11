@@ -104,3 +104,50 @@ export function getYearMonths(year: number): Date[] {
   }
   return months;
 }
+
+// Day boundary logic - day starts at 5:00 AM
+const DAY_START_HOUR = 5;
+
+/**
+ * Gets the "effective date" based on the 5 AM boundary.
+ * If it's before 5 AM, returns yesterday's date.
+ * If it's 5 AM or later, returns today's date.
+ */
+export function getEffectiveDate(now: Date = new Date()): Date {
+  const hour = now.getHours();
+
+  if (hour < DAY_START_HOUR) {
+    // Before 5 AM - still "yesterday"
+    return addDays(now, -1);
+  }
+
+  // 5 AM or later - it's "today"
+  return now;
+}
+
+/**
+ * Gets the effective date string (YYYY-MM-DD) for storage/comparison
+ */
+export function getEffectiveDateString(now: Date = new Date()): string {
+  return formatDate(getEffectiveDate(now));
+}
+
+/**
+ * Checks if a new day has started since the last recorded day start.
+ * Returns true if:
+ * - No previous day start recorded, OR
+ * - The effective date is different from the last started date
+ */
+export function hasNewDayStarted(lastStartedDate: string | null): boolean {
+  if (!lastStartedDate) return true;
+
+  const currentEffectiveDate = getEffectiveDateString();
+  return currentEffectiveDate !== lastStartedDate;
+}
+
+/**
+ * Checks if it's currently past the day start threshold (5 AM)
+ */
+export function isPastDayStart(now: Date = new Date()): boolean {
+  return now.getHours() >= DAY_START_HOUR;
+}
