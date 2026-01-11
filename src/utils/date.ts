@@ -105,23 +105,48 @@ export function getYearMonths(year: number): Date[] {
   return months;
 }
 
-// Day boundary logic - day starts at 5:00 AM
-const DAY_START_HOUR = 5;
+// Day boundary logic - configurable day start hour
+const DAY_START_HOUR_KEY = 'dayStartHour';
+const DEFAULT_DAY_START_HOUR = 5;
 
 /**
- * Gets the "effective date" based on the 5 AM boundary.
- * If it's before 5 AM, returns yesterday's date.
- * If it's 5 AM or later, returns today's date.
+ * Gets the configured day start hour from localStorage
+ */
+export function getDayStartHour(): number {
+  const stored = localStorage.getItem(DAY_START_HOUR_KEY);
+  if (stored) {
+    const hour = parseInt(stored, 10);
+    if (!isNaN(hour) && hour >= 0 && hour <= 23) {
+      return hour;
+    }
+  }
+  return DEFAULT_DAY_START_HOUR;
+}
+
+/**
+ * Sets the day start hour in localStorage
+ */
+export function setDayStartHour(hour: number): void {
+  if (hour >= 0 && hour <= 23) {
+    localStorage.setItem(DAY_START_HOUR_KEY, hour.toString());
+  }
+}
+
+/**
+ * Gets the "effective date" based on the configured day start hour.
+ * If it's before the start hour, returns yesterday's date.
+ * If it's at or after the start hour, returns today's date.
  */
 export function getEffectiveDate(now: Date = new Date()): Date {
   const hour = now.getHours();
+  const dayStartHour = getDayStartHour();
 
-  if (hour < DAY_START_HOUR) {
-    // Before 5 AM - still "yesterday"
+  if (hour < dayStartHour) {
+    // Before day start hour - still "yesterday"
     return addDays(now, -1);
   }
 
-  // 5 AM or later - it's "today"
+  // At or after day start hour - it's "today"
   return now;
 }
 
@@ -146,8 +171,8 @@ export function hasNewDayStarted(lastStartedDate: string | null): boolean {
 }
 
 /**
- * Checks if it's currently past the day start threshold (5 AM)
+ * Checks if it's currently past the day start threshold
  */
 export function isPastDayStart(now: Date = new Date()): boolean {
-  return now.getHours() >= DAY_START_HOUR;
+  return now.getHours() >= getDayStartHour();
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDayStart } from '../context/DayStartContext';
-import { getEffectiveDate, getDayName, getMonthName } from '../utils/date';
+import { getEffectiveDate, getDayName, getMonthName, getDayStartHour, setDayStartHour } from '../utils/date';
 
 function formatHour(hour: number): string {
   if (hour === 0) return '12 AM';
@@ -10,10 +10,18 @@ function formatHour(hour: number): string {
 }
 
 function ReadyStep({ onProceed }: { onProceed: () => void }) {
+  const [dayStartHour, setDayStartHourState] = useState(getDayStartHour);
   const effectiveDate = getEffectiveDate();
   const dayName = getDayName(effectiveDate);
   const monthName = getMonthName(effectiveDate);
   const dayNumber = effectiveDate.getDate();
+
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  const handleDayStartChange = (hour: number) => {
+    setDayStartHourState(hour);
+    setDayStartHour(hour);
+  };
 
   return (
     <div className="text-center px-6 max-w-md">
@@ -44,12 +52,30 @@ function ReadyStep({ onProceed }: { onProceed: () => void }) {
         Ready to Start the Day
       </button>
 
-      <p
-        className="mt-6 text-sm"
-        style={{ color: 'var(--color-text-tertiary)' }}
-      >
-        Your day resets at 5:00 AM
-      </p>
+      <div className="mt-6 flex items-center justify-center gap-2">
+        <span
+          className="text-sm"
+          style={{ color: 'var(--color-text-tertiary)' }}
+        >
+          Your day resets at
+        </span>
+        <select
+          value={dayStartHour}
+          onChange={(e) => handleDayStartChange(Number(e.target.value))}
+          className="px-2 py-1 rounded-lg text-sm font-medium cursor-pointer"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text-primary)',
+            border: `1px solid var(--color-border)`,
+          }}
+        >
+          {hours.map((h) => (
+            <option key={h} value={h}>
+              {formatHour(h)}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
