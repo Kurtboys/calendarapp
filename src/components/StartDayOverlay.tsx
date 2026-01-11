@@ -1,58 +1,186 @@
+import { useState } from 'react';
 import { useDayStart } from '../context/DayStartContext';
 import { getEffectiveDate, getDayName, getMonthName } from '../utils/date';
 
-export function StartDayOverlay() {
-  const { startDay } = useDayStart();
-  const effectiveDate = getEffectiveDate();
+function formatHour(hour: number): string {
+  if (hour === 0) return '12 AM';
+  if (hour === 12) return '12 PM';
+  if (hour < 12) return `${hour} AM`;
+  return `${hour - 12} PM`;
+}
 
+function ReadyStep({ onProceed }: { onProceed: () => void }) {
+  const effectiveDate = getEffectiveDate();
   const dayName = getDayName(effectiveDate);
   const monthName = getMonthName(effectiveDate);
   const dayNumber = effectiveDate.getDate();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'var(--color-background)' }}
-    >
-      <div className="text-center px-6 max-w-md">
-        {/* Date display */}
-        <p
-          className="text-sm font-medium uppercase tracking-wider mb-2"
+    <div className="text-center px-6 max-w-md">
+      <p
+        className="text-sm font-medium uppercase tracking-wider mb-2"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        {dayName}
+      </p>
+      <h1
+        className="text-6xl font-bold mb-1"
+        style={{ color: 'var(--color-text-primary)' }}
+      >
+        {monthName} {dayNumber}
+      </h1>
+
+      <div className="h-16" />
+
+      <button
+        onClick={onProceed}
+        className="px-8 py-4 rounded-2xl text-lg font-semibold transition-all duration-200 hover:scale-105 active:scale-100"
+        style={{
+          backgroundColor: 'var(--color-accent)',
+          color: 'white',
+          boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+        }}
+      >
+        Ready to Start the Day
+      </button>
+
+      <p
+        className="mt-6 text-sm"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        Your day resets at 5:00 AM
+      </p>
+    </div>
+  );
+}
+
+function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime: number) => void }) {
+  const [startTime, setStartTime] = useState(7); // Default 7 AM
+  const [endTime, setEndTime] = useState(22); // Default 10 PM
+
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  const handleSubmit = () => {
+    onComplete(startTime, endTime);
+  };
+
+  return (
+    <div className="px-6 max-w-lg w-full">
+      <h2
+        className="text-2xl font-semibold text-center mb-2"
+        style={{ color: 'var(--color-text-primary)' }}
+      >
+        Set Your Day Window
+      </h2>
+      <p
+        className="text-center mb-10"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        When do you want to start and end your productive day?
+      </p>
+
+      <div className="flex items-center justify-center gap-6 mb-12">
+        {/* Start Time */}
+        <div className="flex flex-col items-center">
+          <label
+            className="text-sm font-medium mb-2"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            Start
+          </label>
+          <select
+            value={startTime}
+            onChange={(e) => setStartTime(Number(e.target.value))}
+            className="px-4 py-3 rounded-xl text-lg font-medium appearance-none cursor-pointer min-w-[120px] text-center"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              color: 'var(--color-text-primary)',
+              border: `2px solid var(--color-border)`,
+            }}
+          >
+            {hours.map((h) => (
+              <option key={h} value={h}>
+                {formatHour(h)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Arrow */}
+        <div
+          className="text-2xl mt-6"
           style={{ color: 'var(--color-text-tertiary)' }}
         >
-          {dayName}
-        </p>
-        <h1
-          className="text-6xl font-bold mb-1"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          {monthName} {dayNumber}
-        </h1>
+          →
+        </div>
 
-        {/* Spacer */}
-        <div className="h-16" />
+        {/* End Time */}
+        <div className="flex flex-col items-center">
+          <label
+            className="text-sm font-medium mb-2"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            End
+          </label>
+          <select
+            value={endTime}
+            onChange={(e) => setEndTime(Number(e.target.value))}
+            className="px-4 py-3 rounded-xl text-lg font-medium appearance-none cursor-pointer min-w-[120px] text-center"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              color: 'var(--color-text-primary)',
+              border: `2px solid var(--color-border)`,
+            }}
+          >
+            {hours.map((h) => (
+              <option key={h} value={h}>
+                {formatHour(h)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-        {/* Start day button */}
+      {/* Duration info */}
+      <p
+        className="text-center mb-8"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        {endTime > startTime
+          ? `${endTime - startTime} hours of productive time`
+          : endTime < startTime
+          ? `${24 - startTime + endTime} hours (overnight)`
+          : 'Please select different times'}
+      </p>
+
+      <div className="flex justify-center">
         <button
-          onClick={startDay}
-          className="group relative px-8 py-4 rounded-2xl text-lg font-semibold transition-all duration-200 hover:scale-105 active:scale-100"
+          onClick={handleSubmit}
+          disabled={startTime === endTime}
+          className="px-8 py-4 rounded-2xl text-lg font-semibold transition-all duration-200 hover:scale-105 active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           style={{
             backgroundColor: 'var(--color-accent)',
             color: 'white',
             boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
           }}
         >
-          Ready to Start the Day
+          Let's Go
         </button>
-
-        {/* Subtle hint */}
-        <p
-          className="mt-6 text-sm"
-          style={{ color: 'var(--color-text-tertiary)' }}
-        >
-          Your day resets at 5:00 AM
-        </p>
       </div>
+    </div>
+  );
+}
+
+export function StartDayOverlay() {
+  const { step, proceedToConfig, completeSetup } = useDayStart();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
+      {step === 'ready' && <ReadyStep onProceed={proceedToConfig} />}
+      {step === 'configure' && <ConfigureStep onComplete={completeSetup} />}
     </div>
   );
 }

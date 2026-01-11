@@ -10,7 +10,7 @@ import { addDays, startOfWeek, getEffectiveDate } from './utils/date';
 import './index.css';
 
 function CalendarApp() {
-  const { isDayStarted } = useDayStart();
+  const { step } = useDayStart();
   const [currentView, setCurrentView] = useState<ViewType>('today');
   const [currentDate, setCurrentDate] = useState(() => getEffectiveDate());
 
@@ -79,8 +79,8 @@ function CalendarApp() {
     }
   };
 
-  // Show the "Start Day" overlay if day hasn't been started
-  if (!isDayStarted) {
+  // Show the "Start Day" overlay if day hasn't been fully configured
+  if (step !== 'complete') {
     return <StartDayOverlay />;
   }
 

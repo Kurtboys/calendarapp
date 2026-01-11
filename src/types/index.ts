@@ -21,3 +21,19 @@ export interface DayData {
   isCurrentMonth: boolean;
   tasks: Task[];
 }
+
+export interface Goal {
+  id: string;
+  title: string;
+  duration: number; // in minutes
+  order: number;
+  completed: boolean;
+}
+
+export interface DayConfig {
+  date: string; // YYYY-MM-DD
+  startTime: number; // hour (0-23), e.g., 7 for 7 AM
+  endTime: number; // hour (0-23), e.g., 22 for 10 PM
+  goals: Goal[];
+  startedAt: string; // ISO timestamp when day was started
+}
