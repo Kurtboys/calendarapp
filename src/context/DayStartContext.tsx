@@ -22,10 +22,12 @@ interface DayStartContextType {
   completeSetup: (startTime: number, endTime: number) => void;
 
   // Goal management
-  addGoal: (title: string, duration: number) => void;
+  addGoal: (title: string, duration: number, scheduledTime?: number) => void;
   updateGoal: (id: string, updates: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
   reorderGoals: (goalIds: string[]) => void;
+  scheduleGoal: (goalId: string, hour: number) => void;
+  unscheduleGoal: (goalId: string) => void;
 
   // Active goal management
   startGoal: (goalId: string, timeCap?: number) => void;
@@ -134,7 +136,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     setStep('complete');
   }, [currentDayDate, dayConfig]);
 
-  const addGoal = useCallback((title: string, duration: number) => {
+  const addGoal = useCallback((title: string, duration: number, scheduledTime?: number) => {
     if (!dayConfig) return;
 
     const newGoal: Goal = {
@@ -143,6 +145,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       duration,
       order: dayConfig.goals.filter(g => !g.completed).length,
       completed: false,
+      scheduledTime,
     };
 
     const updated = {
@@ -205,6 +208,32 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const updated = {
       ...dayConfig,
       goals: [...reordered, ...completedGoals],
+    };
+    setDayConfig(updated);
+    saveDayConfig(updated);
+  }, [dayConfig]);
+
+  const scheduleGoal = useCallback((goalId: string, hour: number) => {
+    if (!dayConfig) return;
+
+    const updated = {
+      ...dayConfig,
+      goals: dayConfig.goals.map(g =>
+        g.id === goalId ? { ...g, scheduledTime: hour } : g
+      ),
+    };
+    setDayConfig(updated);
+    saveDayConfig(updated);
+  }, [dayConfig]);
+
+  const unscheduleGoal = useCallback((goalId: string) => {
+    if (!dayConfig) return;
+
+    const updated = {
+      ...dayConfig,
+      goals: dayConfig.goals.map(g =>
+        g.id === goalId ? { ...g, scheduledTime: undefined } : g
+      ),
     };
     setDayConfig(updated);
     saveDayConfig(updated);
@@ -275,6 +304,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       updateGoal,
       deleteGoal,
       reorderGoals,
+      scheduleGoal,
+      unscheduleGoal,
       startGoal,
       completeActiveGoal,
       cancelActiveGoal,

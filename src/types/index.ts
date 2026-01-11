@@ -30,6 +30,16 @@ export interface Goal {
   completed: boolean;
   completedAt?: string; // ISO timestamp when completed
   timeSpent?: number; // actual minutes spent
+  scheduledTime?: number; // hour (0-23) when this goal is scheduled, undefined = unscheduled
+  isRepeating?: boolean; // if true, this goal repeats daily
+}
+
+export interface RepeatingGoal {
+  id: string;
+  title: string;
+  duration: number;
+  scheduledTime?: number; // optional scheduled time
+  order: number;
 }
 
 export interface DayConfig {

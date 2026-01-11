@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
 import { GoalBlock } from '../GoalBlock';
 import { ActiveGoalModal } from '../ActiveGoalModal';
+import { Timeline } from '../Timeline';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName } from '../../utils/date';
 
 interface TodayViewProps {
@@ -22,6 +23,8 @@ export function TodayView({ date }: TodayViewProps) {
     addGoal,
     deleteGoal,
     reorderGoals,
+    scheduleGoal,
+    unscheduleGoal,
     startGoal,
   } = useDayStart();
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -29,14 +32,15 @@ export function TodayView({ date }: TodayViewProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [showDoneList, setShowDoneList] = useState(true);
+  const [viewMode, setViewMode] = useState<'timeline' | 'queue'>('timeline');
 
   const effectiveDate = getEffectiveDate();
   const isToday = date.toDateString() === effectiveDate.toDateString();
 
   const allGoals = dayConfig?.goals || [];
-  const pendingGoals = allGoals.filter(g => !g.completed).sort((a, b) => a.order - b.order);
+  const pendingGoals = allGoals.filter(g => !g.completed);
+  const unscheduledGoals = pendingGoals.filter(g => g.scheduledTime === undefined).sort((a, b) => a.order - b.order);
   const completedGoals = allGoals.filter(g => g.completed).sort((a, b) => {
-    // Sort by completion time, most recent first
     if (a.completedAt && b.completedAt) {
       return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
     }
@@ -63,8 +67,9 @@ export function TodayView({ date }: TodayViewProps) {
     startGoal(goalId);
   };
 
-  const handleDragStart = useCallback((_e: React.DragEvent, index: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, index: number, goalId: string) => {
     setDragIndex(index);
+    e.dataTransfer.setData('goalId', goalId);
   }, []);
 
   const handleDragOver = useCallback((_e: React.DragEvent, index: number) => {
@@ -73,14 +78,14 @@ export function TodayView({ date }: TodayViewProps) {
 
   const handleDragEnd = useCallback(() => {
     if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
-      const newGoals = [...pendingGoals];
+      const newGoals = [...unscheduledGoals];
       const [draggedGoal] = newGoals.splice(dragIndex, 1);
       newGoals.splice(dragOverIndex, 0, draggedGoal);
       reorderGoals(newGoals.map(g => g.id));
     }
     setDragIndex(null);
     setDragOverIndex(null);
-  }, [dragIndex, dragOverIndex, pendingGoals, reorderGoals]);
+  }, [dragIndex, dragOverIndex, unscheduledGoals, reorderGoals]);
 
   if (!isToday) {
     return (
@@ -99,11 +104,10 @@ export function TodayView({ date }: TodayViewProps) {
 
   return (
     <>
-      {/* Active Goal Modal */}
       {activeGoal && <ActiveGoalModal />}
 
       <div className="h-full overflow-auto">
-        <div className="max-w-2xl mx-auto p-6">
+        <div className="max-w-3xl mx-auto p-6">
           {/* Day info header */}
           {dayConfig && (
             <div
@@ -151,6 +155,30 @@ export function TodayView({ date }: TodayViewProps) {
               </div>
             </div>
           )}
+
+          {/* View mode toggle */}
+          <div className="mb-4 flex gap-2">
+            <button
+              onClick={() => setViewMode('timeline')}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: viewMode === 'timeline' ? 'var(--color-accent)' : 'var(--color-surface)',
+                color: viewMode === 'timeline' ? 'white' : 'var(--color-text-secondary)',
+              }}
+            >
+              Timeline
+            </button>
+            <button
+              onClick={() => setViewMode('queue')}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: viewMode === 'queue' ? 'var(--color-accent)' : 'var(--color-surface)',
+                color: viewMode === 'queue' ? 'white' : 'var(--color-text-secondary)',
+              }}
+            >
+              Queue
+            </button>
+          </div>
 
           {/* Add new goal */}
           <div
@@ -210,44 +238,95 @@ export function TodayView({ date }: TodayViewProps) {
             </div>
           </div>
 
-          {/* Pending Goals Queue */}
-          <div className="mb-8">
-            <h3
-              className="text-sm font-semibold uppercase tracking-wider mb-3"
-              style={{ color: 'var(--color-text-tertiary)' }}
-            >
-              Up Next ({pendingGoals.length})
-            </h3>
-            <div className="space-y-3">
-              {pendingGoals.length === 0 ? (
-                <div
-                  className="text-center py-8 rounded-xl"
-                  style={{ backgroundColor: 'var(--color-surface)' }}
+          {viewMode === 'timeline' && dayConfig && (
+            <>
+              {/* Timeline view */}
+              <div className="mb-8">
+                <h3
+                  className="text-sm font-semibold uppercase tracking-wider mb-3"
+                  style={{ color: 'var(--color-text-tertiary)' }}
                 >
-                  <p style={{ color: 'var(--color-text-tertiary)' }}>
-                    {completedGoals.length > 0
-                      ? 'All goals completed! Add more or enjoy your day.'
-                      : 'No goals yet. Add your first goal block above.'}
-                  </p>
+                  Timeline
+                </h3>
+                <Timeline
+                  startTime={dayConfig.startTime}
+                  endTime={dayConfig.endTime}
+                  goals={pendingGoals}
+                  onGoalClick={handleGoalClick}
+                  onScheduleGoal={scheduleGoal}
+                  onUnscheduleGoal={unscheduleGoal}
+                />
+              </div>
+
+              {/* Unscheduled goals */}
+              {unscheduledGoals.length > 0 && (
+                <div className="mb-8">
+                  <h3
+                    className="text-sm font-semibold uppercase tracking-wider mb-3"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    Unscheduled ({unscheduledGoals.length}) - drag to timeline
+                  </h3>
+                  <div className="space-y-3">
+                    {unscheduledGoals.map((goal, index) => (
+                      <GoalBlock
+                        key={goal.id}
+                        goal={goal}
+                        index={index}
+                        onClick={() => handleGoalClick(goal.id)}
+                        onDelete={deleteGoal}
+                        onDragStart={(e) => handleDragStart(e, index, goal.id)}
+                        onDragOver={handleDragOver}
+                        onDragEnd={handleDragEnd}
+                        isDragging={dragIndex === index}
+                        isDragOver={dragOverIndex === index && dragIndex !== index}
+                      />
+                    ))}
+                  </div>
                 </div>
-              ) : (
-                pendingGoals.map((goal, index) => (
-                  <GoalBlock
-                    key={goal.id}
-                    goal={goal}
-                    index={index}
-                    onClick={() => handleGoalClick(goal.id)}
-                    onDelete={deleteGoal}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDragEnd={handleDragEnd}
-                    isDragging={dragIndex === index}
-                    isDragOver={dragOverIndex === index && dragIndex !== index}
-                  />
-                ))
               )}
+            </>
+          )}
+
+          {viewMode === 'queue' && (
+            <div className="mb-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider mb-3"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                Up Next ({pendingGoals.length})
+              </h3>
+              <div className="space-y-3">
+                {pendingGoals.length === 0 ? (
+                  <div
+                    className="text-center py-8 rounded-xl"
+                    style={{ backgroundColor: 'var(--color-surface)' }}
+                  >
+                    <p style={{ color: 'var(--color-text-tertiary)' }}>
+                      {completedGoals.length > 0
+                        ? 'All goals completed! Add more or enjoy your day.'
+                        : 'No goals yet. Add your first goal block above.'}
+                    </p>
+                  </div>
+                ) : (
+                  pendingGoals.sort((a, b) => a.order - b.order).map((goal, index) => (
+                    <GoalBlock
+                      key={goal.id}
+                      goal={goal}
+                      index={index}
+                      onClick={() => handleGoalClick(goal.id)}
+                      onDelete={deleteGoal}
+                      onDragStart={(e) => handleDragStart(e, index, goal.id)}
+                      onDragOver={handleDragOver}
+                      onDragEnd={handleDragEnd}
+                      isDragging={dragIndex === index}
+                      isDragOver={dragOverIndex === index && dragIndex !== index}
+                    />
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Done List */}
           {completedGoals.length > 0 && (
@@ -276,7 +355,6 @@ export function TodayView({ date }: TodayViewProps) {
                       className="flex items-center gap-3 p-3 rounded-xl"
                       style={{ backgroundColor: 'var(--color-surface)' }}
                     >
-                      {/* Checkmark */}
                       <div
                         className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
                         style={{ backgroundColor: 'var(--color-priority-low)' }}
@@ -285,16 +363,12 @@ export function TodayView({ date }: TodayViewProps) {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>
                       </div>
-
-                      {/* Title */}
                       <span
                         className="flex-1 line-through"
                         style={{ color: 'var(--color-text-tertiary)' }}
                       >
                         {goal.title}
                       </span>
-
-                      {/* Time spent */}
                       <span
                         className="text-sm"
                         style={{ color: 'var(--color-text-tertiary)' }}
