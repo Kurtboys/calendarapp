@@ -25,9 +25,11 @@ export interface DayData {
 export interface Goal {
   id: string;
   title: string;
-  duration: number; // in minutes
+  duration: number; // in minutes (time cap)
   order: number;
   completed: boolean;
+  completedAt?: string; // ISO timestamp when completed
+  timeSpent?: number; // actual minutes spent
 }
 
 export interface DayConfig {

@@ -5,7 +5,7 @@ import { formatDuration } from '../utils/date';
 interface GoalBlockProps {
   goal: Goal;
   index: number;
-  onToggleComplete: (id: string) => void;
+  onClick: () => void;
   onDelete: (id: string) => void;
   onDragStart: (e: React.DragEvent, index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
@@ -17,7 +17,7 @@ interface GoalBlockProps {
 export function GoalBlock({
   goal,
   index,
-  onToggleComplete,
+  onClick,
   onDelete,
   onDragStart,
   onDragOver,
@@ -27,9 +27,16 @@ export function GoalBlock({
 }: GoalBlockProps) {
   const [showDelete, setShowDelete] = useState(false);
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Don't trigger click when dragging
+    if (e.defaultPrevented) return;
+    onClick();
+  };
+
   return (
     <div
       draggable
+      onClick={handleClick}
       onDragStart={(e) => onDragStart(e, index)}
       onDragOver={(e) => {
         e.preventDefault();
@@ -38,59 +45,59 @@ export function GoalBlock({
       onDragEnd={onDragEnd}
       onMouseEnter={() => setShowDelete(true)}
       onMouseLeave={() => setShowDelete(false)}
-      className={`relative flex items-center gap-4 p-4 rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 ${
+      className={`relative flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] ${
         isDragging ? 'opacity-50 scale-95' : ''
       } ${isDragOver ? 'translate-y-1' : ''}`}
       style={{
-        backgroundColor: goal.completed ? 'var(--color-surface)' : 'var(--color-surface)',
+        backgroundColor: 'var(--color-surface)',
         border: `2px solid ${isDragOver ? 'var(--color-accent)' : 'var(--color-border)'}`,
       }}
     >
-      {/* Order number / Drag handle */}
+      {/* Order number */}
       <div
         className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold"
         style={{
-          backgroundColor: goal.completed ? 'var(--color-border)' : 'var(--color-accent-light)',
-          color: goal.completed ? 'var(--color-text-tertiary)' : 'var(--color-accent)',
+          backgroundColor: 'var(--color-accent-light)',
+          color: 'var(--color-accent)',
         }}
       >
         {index + 1}
       </div>
 
-      {/* Checkbox */}
-      <button
-        onClick={() => onToggleComplete(goal.id)}
-        className="flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors"
+      {/* Play icon */}
+      <div
+        className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-transform hover:scale-110"
         style={{
-          borderColor: goal.completed ? 'var(--color-accent)' : 'var(--color-border)',
-          backgroundColor: goal.completed ? 'var(--color-accent)' : 'transparent',
+          backgroundColor: 'var(--color-accent)',
         }}
       >
-        {goal.completed && (
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-      </button>
+        <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <p
-          className={`font-medium ${goal.completed ? 'line-through' : ''}`}
-          style={{
-            color: goal.completed ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
-          }}
+          className="font-medium"
+          style={{ color: 'var(--color-text-primary)' }}
         >
           {goal.title}
         </p>
+        <p
+          className="text-sm"
+          style={{ color: 'var(--color-text-tertiary)' }}
+        >
+          Click to start timer
+        </p>
       </div>
 
-      {/* Duration */}
+      {/* Duration badge */}
       <div
-        className="flex-shrink-0 px-3 py-1 rounded-lg text-sm font-medium"
+        className="flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold"
         style={{
-          backgroundColor: goal.completed ? 'var(--color-border)' : 'var(--color-accent-light)',
-          color: goal.completed ? 'var(--color-text-tertiary)' : 'var(--color-accent)',
+          backgroundColor: 'var(--color-accent-light)',
+          color: 'var(--color-accent)',
         }}
       >
         {formatDuration(goal.duration)}
@@ -99,8 +106,11 @@ export function GoalBlock({
       {/* Delete button */}
       {showDelete && (
         <button
-          onClick={() => onDelete(goal.id)}
-          className="absolute -right-2 -top-2 w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(goal.id);
+          }}
+          className="absolute -right-2 -top-2 w-6 h-6 rounded-full flex items-center justify-center transition-colors hover:scale-110"
           style={{
             backgroundColor: 'var(--color-priority-urgent)',
             color: 'white',
@@ -112,9 +122,9 @@ export function GoalBlock({
         </button>
       )}
 
-      {/* Drag indicator */}
+      {/* Drag handle */}
       <div
-        className="flex-shrink-0 flex flex-col gap-0.5"
+        className="flex-shrink-0 flex flex-col gap-0.5 cursor-grab active:cursor-grabbing"
         style={{ color: 'var(--color-text-tertiary)' }}
       >
         <div className="flex gap-0.5">

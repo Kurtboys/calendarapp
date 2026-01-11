@@ -5,10 +5,17 @@ import { getEffectiveDateString, hasNewDayStarted } from '../utils/date';
 
 type DayStartStep = 'ready' | 'configure' | 'complete';
 
+interface ActiveGoalState {
+  goalId: string;
+  startedAt: number; // timestamp when started
+  timeCap: number; // minutes
+}
+
 interface DayStartContextType {
   step: DayStartStep;
   dayConfig: DayConfig | null;
   currentDayDate: string;
+  activeGoal: ActiveGoalState | null;
 
   // Step transitions
   proceedToConfig: () => void;
@@ -19,12 +26,18 @@ interface DayStartContextType {
   updateGoal: (id: string, updates: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
   reorderGoals: (goalIds: string[]) => void;
-  toggleGoalComplete: (id: string) => void;
+
+  // Active goal management
+  startGoal: (goalId: string, timeCap?: number) => void;
+  completeActiveGoal: () => void;
+  cancelActiveGoal: () => void;
+  updateTimeCap: (minutes: number) => void;
 }
 
 const DayStartContext = createContext<DayStartContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'dayConfig';
+const ACTIVE_GOAL_KEY = 'activeGoal';
 
 function loadDayConfig(): DayConfig | null {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -44,8 +57,27 @@ function saveDayConfig(config: DayConfig | null) {
   }
 }
 
+function loadActiveGoal(): ActiveGoalState | null {
+  const stored = localStorage.getItem(ACTIVE_GOAL_KEY);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveGoal(state: ActiveGoalState | null) {
+  if (state) {
+    localStorage.setItem(ACTIVE_GOAL_KEY, JSON.stringify(state));
+  } else {
+    localStorage.removeItem(ACTIVE_GOAL_KEY);
+  }
+}
+
 export function DayStartProvider({ children }: { children: ReactNode }) {
   const [dayConfig, setDayConfig] = useState<DayConfig | null>(() => loadDayConfig());
+  const [activeGoal, setActiveGoal] = useState<ActiveGoalState | null>(() => loadActiveGoal());
 
   const currentDayDate = getEffectiveDateString();
 
@@ -58,6 +90,14 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   };
 
   const [step, setStep] = useState<DayStartStep>(getStep);
+
+  // Clear active goal on new day
+  useEffect(() => {
+    if (hasNewDayStarted(dayConfig?.date || null)) {
+      setActiveGoal(null);
+      saveActiveGoal(null);
+    }
+  }, [dayConfig?.date]);
 
   // Check for day changes periodically
   useEffect(() => {
@@ -101,7 +141,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       id: crypto.randomUUID(),
       title,
       duration,
-      order: dayConfig.goals.length,
+      order: dayConfig.goals.filter(g => !g.completed).length,
       completed: false,
     };
 
@@ -129,8 +169,19 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   const deleteGoal = useCallback((id: string) => {
     if (!dayConfig) return;
 
+    // Clear active goal if deleting it
+    if (activeGoal?.goalId === id) {
+      setActiveGoal(null);
+      saveActiveGoal(null);
+    }
+
     const filtered = dayConfig.goals.filter(g => g.id !== id);
-    const reordered = filtered.map((g, i) => ({ ...g, order: i }));
+    const incompleteGoals = filtered.filter(g => !g.completed);
+    const completedGoals = filtered.filter(g => g.completed);
+    const reordered = [
+      ...incompleteGoals.map((g, i) => ({ ...g, order: i })),
+      ...completedGoals,
+    ];
 
     const updated = {
       ...dayConfig,
@@ -138,7 +189,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     };
     setDayConfig(updated);
     saveDayConfig(updated);
-  }, [dayConfig]);
+  }, [dayConfig, activeGoal]);
 
   const reorderGoals = useCallback((goalIds: string[]) => {
     if (!dayConfig) return;
@@ -148,39 +199,86 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       return goal ? { ...goal, order: index } : null;
     }).filter((g): g is Goal => g !== null);
 
+    // Keep completed goals at the end
+    const completedGoals = dayConfig.goals.filter(g => g.completed && !goalIds.includes(g.id));
+
     const updated = {
       ...dayConfig,
-      goals: reordered,
+      goals: [...reordered, ...completedGoals],
     };
     setDayConfig(updated);
     saveDayConfig(updated);
   }, [dayConfig]);
 
-  const toggleGoalComplete = useCallback((id: string) => {
-    if (!dayConfig) return;
+  const startGoal = useCallback((goalId: string, timeCap?: number) => {
+    const goal = dayConfig?.goals.find(g => g.id === goalId);
+    if (!goal) return;
+
+    const newActiveGoal: ActiveGoalState = {
+      goalId,
+      startedAt: Date.now(),
+      timeCap: timeCap ?? goal.duration,
+    };
+    setActiveGoal(newActiveGoal);
+    saveActiveGoal(newActiveGoal);
+  }, [dayConfig]);
+
+  const completeActiveGoal = useCallback(() => {
+    if (!activeGoal || !dayConfig) return;
+
+    const timeSpent = Math.round((Date.now() - activeGoal.startedAt) / 60000); // Convert to minutes
 
     const updated = {
       ...dayConfig,
       goals: dayConfig.goals.map(g =>
-        g.id === id ? { ...g, completed: !g.completed } : g
+        g.id === activeGoal.goalId
+          ? {
+              ...g,
+              completed: true,
+              completedAt: new Date().toISOString(),
+              timeSpent,
+            }
+          : g
       ),
     };
     setDayConfig(updated);
     saveDayConfig(updated);
-  }, [dayConfig]);
+    setActiveGoal(null);
+    saveActiveGoal(null);
+  }, [activeGoal, dayConfig]);
+
+  const cancelActiveGoal = useCallback(() => {
+    setActiveGoal(null);
+    saveActiveGoal(null);
+  }, []);
+
+  const updateTimeCap = useCallback((minutes: number) => {
+    if (!activeGoal) return;
+
+    const updated = {
+      ...activeGoal,
+      timeCap: minutes,
+    };
+    setActiveGoal(updated);
+    saveActiveGoal(updated);
+  }, [activeGoal]);
 
   return (
     <DayStartContext.Provider value={{
       step,
       dayConfig,
       currentDayDate,
+      activeGoal,
       proceedToConfig,
       completeSetup,
       addGoal,
       updateGoal,
       deleteGoal,
       reorderGoals,
-      toggleGoalComplete,
+      startGoal,
+      completeActiveGoal,
+      cancelActiveGoal,
+      updateTimeCap,
     }}>
       {children}
     </DayStartContext.Provider>
