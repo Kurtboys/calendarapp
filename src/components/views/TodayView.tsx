@@ -117,6 +117,14 @@ export function TodayView({ date }: TodayViewProps) {
                   </p>
                   <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>
                     {formatHour(dayConfig.startTime)} – {formatHour(dayConfig.endTime)}
+                    {dayConfig.endTime <= dayConfig.startTime && (
+                      <span
+                        className="ml-1 text-sm font-normal"
+                        style={{ color: 'var(--color-text-tertiary)' }}
+                      >
+                        (+1 day)
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="text-right">

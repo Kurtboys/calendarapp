@@ -146,7 +146,9 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
             className="text-sm font-medium mb-2"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            End
+            End {endTime <= startTime && endTime !== startTime && (
+              <span style={{ color: 'var(--color-accent)' }}>(+1 day)</span>
+            )}
           </label>
           <select
             value={endTime}
@@ -175,7 +177,7 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
         {endTime > startTime
           ? `${endTime - startTime} hours of productive time`
           : endTime < startTime
-          ? `${24 - startTime + endTime} hours (overnight)`
+          ? `${24 - startTime + endTime} hours (ends tomorrow)`
           : 'Please select different times'}
       </p>
 
