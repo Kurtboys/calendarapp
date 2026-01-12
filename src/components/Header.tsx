@@ -178,7 +178,7 @@ export function Header({
           className="text-xl font-semibold"
           style={{ color: 'var(--color-text-primary)' }}
         >
-          Focus
+          MEREO
         </h1>
 
         {showNavigation && (

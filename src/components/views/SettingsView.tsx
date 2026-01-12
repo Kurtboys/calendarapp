@@ -36,7 +36,7 @@ export function SettingsView() {
             className="text-sm"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            Customize your Focus experience
+            Customize your MEREO experience
           </p>
         </div>
 
@@ -253,13 +253,13 @@ export function SettingsView() {
               className="text-lg font-semibold mb-2"
               style={{ color: 'var(--color-text-primary)' }}
             >
-              About Focus
+              About MEREO
             </h2>
             <p
               className="text-sm mb-4"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Focus is a calendar app designed for people with ADHD and irregular sleep schedules.
+              MEREO is a calendar app designed for people with ADHD and irregular sleep schedules.
               It helps you manage your time with missions and checkpoints,
               with a day that resets at 2 AM instead of midnight.
             </p>
