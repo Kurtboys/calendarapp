@@ -865,28 +865,51 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
 
   // Checkpoint management
   const addCheckpoint = useCallback((missionId: string, title: string, duration: number) => {
-    if (!dayConfig) return;
-
-    const mission = dayConfig.missions.find(m => m.id === missionId);
-    if (!mission) return;
-
     const newCheckpoint: Checkpoint = {
       id: crypto.randomUUID(),
       title,
       duration,
-      order: mission.checkpoints.length,
+      order: 0, // Will be set properly below
       completed: false,
     };
 
-    const updated = {
-      ...dayConfig,
-      missions: dayConfig.missions.map(m =>
-        m.id === missionId ? { ...m, checkpoints: [...m.checkpoints, newCheckpoint] } : m
-      ),
-    };
-    setDayConfig(updated);
-    saveToStorage(STORAGE_KEYS.dayConfig, updated);
-  }, [dayConfig]);
+    // First check if mission is in dayConfig (today's session)
+    if (dayConfig) {
+      const mission = dayConfig.missions.find(m => m.id === missionId);
+      if (mission) {
+        newCheckpoint.order = mission.checkpoints.length;
+        const updated = {
+          ...dayConfig,
+          missions: dayConfig.missions.map(m =>
+            m.id === missionId ? { ...m, checkpoints: [...m.checkpoints, newCheckpoint] } : m
+          ),
+        };
+        setDayConfig(updated);
+        saveToStorage(STORAGE_KEYS.dayConfig, updated);
+        return;
+      }
+    }
+
+    // Otherwise check scheduled days
+    const updatedDays = scheduledDays.map(sd => {
+      const mission = sd.missions.find(m => m.id === missionId);
+      if (mission) {
+        newCheckpoint.order = mission.checkpoints.length;
+        return {
+          ...sd,
+          missions: sd.missions.map(m =>
+            m.id === missionId ? { ...m, checkpoints: [...m.checkpoints, newCheckpoint] } : m
+          ),
+        };
+      }
+      return sd;
+    });
+
+    if (JSON.stringify(updatedDays) !== JSON.stringify(scheduledDays)) {
+      setScheduledDays(updatedDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+    }
+  }, [dayConfig, scheduledDays]);
 
   const updateCheckpoint = useCallback((missionId: string, checkpointId: string, updates: Partial<Checkpoint>) => {
     if (!dayConfig) return;
@@ -904,19 +927,45 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [dayConfig]);
 
   const deleteCheckpoint = useCallback((missionId: string, checkpointId: string) => {
-    if (!dayConfig) return;
+    // First check if mission is in dayConfig
+    if (dayConfig) {
+      const mission = dayConfig.missions.find(m => m.id === missionId);
+      if (mission) {
+        const updated = {
+          ...dayConfig,
+          missions: dayConfig.missions.map(m => {
+            if (m.id !== missionId) return m;
+            const filtered = m.checkpoints.filter(cp => cp.id !== checkpointId);
+            return { ...m, checkpoints: filtered.map((cp, i) => ({ ...cp, order: i })) };
+          }),
+        };
+        setDayConfig(updated);
+        saveToStorage(STORAGE_KEYS.dayConfig, updated);
+        return;
+      }
+    }
 
-    const updated = {
-      ...dayConfig,
-      missions: dayConfig.missions.map(m => {
-        if (m.id !== missionId) return m;
-        const filtered = m.checkpoints.filter(cp => cp.id !== checkpointId);
-        return { ...m, checkpoints: filtered.map((cp, i) => ({ ...cp, order: i })) };
-      }),
-    };
-    setDayConfig(updated);
-    saveToStorage(STORAGE_KEYS.dayConfig, updated);
-  }, [dayConfig]);
+    // Otherwise check scheduled days
+    const updatedDays = scheduledDays.map(sd => {
+      const mission = sd.missions.find(m => m.id === missionId);
+      if (mission) {
+        return {
+          ...sd,
+          missions: sd.missions.map(m => {
+            if (m.id !== missionId) return m;
+            const filtered = m.checkpoints.filter(cp => cp.id !== checkpointId);
+            return { ...m, checkpoints: filtered.map((cp, i) => ({ ...cp, order: i })) };
+          }),
+        };
+      }
+      return sd;
+    });
+
+    if (JSON.stringify(updatedDays) !== JSON.stringify(scheduledDays)) {
+      setScheduledDays(updatedDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+    }
+  }, [dayConfig, scheduledDays]);
 
   const addCheckpointToListItem = useCallback((listItemId: string, title: string, duration: number) => {
     const updated = missionsList.map(m => {
