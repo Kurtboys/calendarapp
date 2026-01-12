@@ -29,6 +29,7 @@ interface DayStartContextType {
   updateMission: (id: string, updates: Partial<Mission>) => void;
   deleteMission: (id: string) => void;
   reorderMissions: (missionIds: string[]) => void;
+  assignMissionNumber: (missionId: string, number: number | undefined) => void;
 
   // Checkpoint management
   addCheckpoint: (missionId: string, title: string, duration: number) => void;
@@ -51,9 +52,11 @@ interface DayStartContextType {
   resolveBottleneck: (missionId: string) => void;
   moveBottleneckToDay: (missionId: string, date: string) => void;
 
-  // Get current mission/checkpoint for Queue mode
+  // Get current mission/checkpoint for Mission Mode
   getCurrentMission: () => Mission | null;
   getCurrentCheckpoint: () => Checkpoint | null;
+  getAssignedMissions: () => Mission[]; // missions with numbers, sorted by number
+  getUnassignedMissions: () => Mission[]; // missions without numbers (in sidebar)
 }
 
 const DayStartContext = createContext<DayStartContextType | undefined>(undefined);
@@ -294,6 +297,30 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const updated = {
       ...dayConfig,
       missions: [...reordered, ...otherMissions],
+    };
+    setDayConfig(updated);
+    saveDayConfig(updated);
+  }, [dayConfig]);
+
+  const assignMissionNumber = useCallback((missionId: string, number: number | undefined) => {
+    if (!dayConfig) return;
+
+    // If assigning a number, first remove that number from any other mission
+    let updatedMissions = dayConfig.missions;
+    if (number !== undefined) {
+      updatedMissions = dayConfig.missions.map(m =>
+        m.missionNumber === number ? { ...m, missionNumber: undefined } : m
+      );
+    }
+
+    // Now assign the number to the target mission
+    updatedMissions = updatedMissions.map(m =>
+      m.id === missionId ? { ...m, missionNumber: number } : m
+    );
+
+    const updated = {
+      ...dayConfig,
+      missions: updatedMissions,
     };
     setDayConfig(updated);
     saveDayConfig(updated);
@@ -679,18 +706,31 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     console.log(`Would move mission ${missionId} to ${_date}`);
   }, []);
 
-  // Get current mission for Queue mode (first incomplete, non-bottlenecked mission)
-  const getCurrentMission = useCallback((): Mission | null => {
-    if (!dayConfig) return null;
+  // Get assigned missions (have mission numbers) sorted by number
+  const getAssignedMissions = useCallback((): Mission[] => {
+    if (!dayConfig) return [];
 
-    const pendingMissions = dayConfig.missions
-      .filter(m => !m.completed && !m.isBottleneck)
-      .sort((a, b) => a.order - b.order);
-
-    return pendingMissions[0] || null;
+    return dayConfig.missions
+      .filter(m => !m.completed && !m.isBottleneck && m.missionNumber !== undefined)
+      .sort((a, b) => (a.missionNumber || 0) - (b.missionNumber || 0));
   }, [dayConfig]);
 
-  // Get current checkpoint for Queue mode
+  // Get unassigned missions (no mission number) - shown in sidebar
+  const getUnassignedMissions = useCallback((): Mission[] => {
+    if (!dayConfig) return [];
+
+    return dayConfig.missions
+      .filter(m => !m.completed && !m.isBottleneck && m.missionNumber === undefined)
+      .sort((a, b) => a.order - b.order);
+  }, [dayConfig]);
+
+  // Get current mission for Mission Mode (first incomplete assigned mission by number)
+  const getCurrentMission = useCallback((): Mission | null => {
+    const assignedMissions = getAssignedMissions();
+    return assignedMissions[0] || null;
+  }, [getAssignedMissions]);
+
+  // Get current checkpoint for Mission Mode
   const getCurrentCheckpoint = useCallback((): Checkpoint | null => {
     const currentMission = getCurrentMission();
     if (!currentMission || currentMission.checkpoints.length === 0) return null;
@@ -716,6 +756,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       updateMission,
       deleteMission,
       reorderMissions,
+      assignMissionNumber,
       addCheckpoint,
       updateCheckpoint,
       deleteCheckpoint,
@@ -731,6 +772,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       moveBottleneckToDay,
       getCurrentMission,
       getCurrentCheckpoint,
+      getAssignedMissions,
+      getUnassignedMissions,
     }}>
       {children}
     </DayStartContext.Provider>

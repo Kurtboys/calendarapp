@@ -42,6 +42,7 @@ export interface Mission {
   timeSpent?: number; // actual total minutes spent
   checkpoints: Checkpoint[];
   currentCheckpointIndex: number; // which checkpoint is active (0-based)
+  missionNumber?: number; // 1-15, assigned position in timeline (undefined = unassigned/in sidebar)
   isRepeating?: boolean; // if true, this mission repeats daily
   repeatingMissionId?: string; // links to the RepeatingMission this was created from
   isBottleneck?: boolean; // if true, this mission is blocked
