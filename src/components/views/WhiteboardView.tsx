@@ -526,7 +526,7 @@ export function WhiteboardView() {
     return saved ? JSON.parse(saved) : { stickyNotes: [], documents: [] };
   });
 
-  const [unlockingMissionId, setUnlockingMissionId] = useState<string | null>(null);
+  const [unlockingMissionId, _setUnlockingMissionId] = useState<string | null>(null);
 
   const assignedMissions = getAssignedMissions();
   const currentMission = getCurrentMission();
@@ -788,7 +788,7 @@ export function WhiteboardView() {
           }}
         >
           {/* Mission arrows connecting missions horizontally */}
-          {assignedMissions.map((mission, idx) => {
+          {assignedMissions.map((_mission, idx) => {
             if (idx === 0) return null;
             const fromPos = getMissionPosition(idx - 1);
             const toPos = getMissionPosition(idx);
