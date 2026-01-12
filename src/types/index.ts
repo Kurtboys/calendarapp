@@ -1,6 +1,6 @@
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 
-export type ViewType = 'today' | '3day' | 'bottleneck' | 'scheduler' | 'dynamic' | 'completed' | 'settings';
+export type ViewType = 'today' | '3day' | 'bottleneck' | 'scheduler' | 'dynamic' | 'completed' | 'settings' | 'whiteboard';
 
 export type MissionCategory = 'need-to-do-soon' | 'can-wait' | 'sometime-future';
 

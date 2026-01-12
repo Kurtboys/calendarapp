@@ -7,7 +7,7 @@ import { HomePage } from './components/HomePage';
 import { LogoutFlowOverlay } from './components/LogoutFlowOverlay';
 import { EnergySelectionOverlay } from './components/EnergySelectionOverlay';
 import { RecommendationsOverlay } from './components/RecommendationsOverlay';
-import { TodayView, MultiDayView, CompletedView, SettingsView } from './components/views';
+import { TodayView, MultiDayView, CompletedView, SettingsView, WhiteboardView } from './components/views';
 import { BottleneckView } from './components/views/BottleneckView';
 import { SchedulerView } from './components/views/SchedulerView';
 import type { ViewType, DynamicViewConfig } from './types';
@@ -70,6 +70,8 @@ function CalendarApp() {
         return <CompletedView />;
       case 'settings':
         return <SettingsView />;
+      case 'whiteboard':
+        return <WhiteboardView />;
       case 'dynamic':
         if (dynamicConfig) {
           return <MultiDayView startDate={dynamicConfig.startDate} days={dynamicConfig.days} />;

@@ -162,10 +162,13 @@ export function Header({
     if (currentView === 'settings') {
       return 'Settings';
     }
+    if (currentView === 'whiteboard') {
+      return 'Whiteboard';
+    }
     return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
-  const showNavigation = currentView !== 'bottleneck' && currentView !== 'scheduler' && currentView !== 'completed' && currentView !== 'settings';
+  const showNavigation = currentView !== 'bottleneck' && currentView !== 'scheduler' && currentView !== 'completed' && currentView !== 'settings' && currentView !== 'whiteboard';
 
   return (
     <header
@@ -309,6 +312,24 @@ export function Header({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               Scheduler
+            </span>
+          </button>
+
+          {/* Whiteboard */}
+          <button
+            onClick={() => onViewChange('whiteboard')}
+            className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: currentView === 'whiteboard' ? 'var(--color-background)' : 'transparent',
+              color: currentView === 'whiteboard' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+              boxShadow: currentView === 'whiteboard' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+            }}
+          >
+            <span className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Board
             </span>
           </button>
 
