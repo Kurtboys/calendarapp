@@ -573,11 +573,29 @@ export function WhiteboardView() {
     setIsPanning(false);
   };
 
-  // Zoom handler
+  // Pan handler (trackpad/scroll wheel)
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(z => Math.min(Math.max(z * delta, 0.25), 2));
+    setPan(p => ({
+      x: p.x - e.deltaX,
+      y: p.y - e.deltaY,
+    }));
+  }, []);
+
+  // Keyboard zoom handler (arrow keys)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setZoom(z => Math.min(z + 0.1, 2));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setZoom(z => Math.max(z - 0.1, 0.25));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Add sticky note
@@ -891,7 +909,7 @@ export function WhiteboardView() {
         }}
       >
         <div className="text-xs space-y-1" style={{ color: 'var(--color-text-tertiary)' }}>
-          <p>Scroll to zoom • Drag to pan</p>
+          <p>Scroll to pan • Arrow keys to zoom</p>
           <p>Double-click notes to edit</p>
         </div>
       </div>
