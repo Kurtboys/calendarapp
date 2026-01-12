@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
 import { ActiveMissionModal } from '../ActiveMissionModal';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName } from '../../utils/date';
-import type { Mission } from '../../types';
 
 interface TodayViewProps {
   date: Date;
@@ -128,23 +127,14 @@ export function TodayView({ date }: TodayViewProps) {
     setDragOverIndex(null);
   }, []);
 
-  // Quick assign: click to set next available number or remove
-  const handleQuickAssign = useCallback((mission: Mission) => {
-    if (mission.missionNumber !== undefined) {
-      // Already has a number - remove it
-      assignMissionNumber(mission.id, undefined);
-    } else {
-      // Assign next available number
-      const usedNumbers = assignedMissions.map(m => m.missionNumber).filter(n => n !== undefined) as number[];
-      let nextNumber = 1;
-      while (usedNumbers.includes(nextNumber) && nextNumber <= 15) {
-        nextNumber++;
-      }
-      if (nextNumber <= 15) {
-        assignMissionNumber(mission.id, nextNumber);
-      }
-    }
-  }, [assignedMissions, assignMissionNumber]);
+  // Get available mission numbers (1-15 minus already assigned, but include current mission's number)
+  const getAvailableMissionNumbers = useCallback((currentMissionId?: string) => {
+    const usedNumbers = assignedMissions
+      .filter(m => m.id !== currentMissionId)
+      .map(m => m.missionNumber)
+      .filter(n => n !== undefined) as number[];
+    return Array.from({ length: 15 }, (_, i) => i + 1).filter(n => !usedNumbers.includes(n));
+  }, [assignedMissions]);
 
   // Calculate mission block positions on timeline based on Parkinson's Law
   const getMissionBlockStyle = (missionIndex: number) => {
@@ -213,7 +203,7 @@ export function TodayView({ date }: TodayViewProps) {
               className="text-xs mb-4"
               style={{ color: 'var(--color-text-tertiary)' }}
             >
-              Drag to reorder • Click number to toggle
+              Drag to reorder • Use dropdown to assign order
             </p>
 
             {/* All missions in one draggable list */}
@@ -257,18 +247,32 @@ export function TodayView({ date }: TodayViewProps) {
                           </svg>
                         </div>
 
-                        {/* Mission number button */}
-                        <button
-                          onClick={() => handleQuickAssign(mission)}
-                          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors"
-                          style={{
-                            backgroundColor: isScheduled ? 'var(--color-priority-low)' : 'var(--color-border)',
-                            color: isScheduled ? 'white' : 'var(--color-text-tertiary)',
+                        {/* Mission number dropdown */}
+                        <select
+                          value={mission.missionNumber ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            assignMissionNumber(mission.id, val ? Number(val) : undefined);
                           }}
-                          title={isScheduled ? 'Click to unschedule' : 'Click to schedule'}
+                          className="flex-shrink-0 w-12 h-8 rounded-lg text-xs font-bold text-center cursor-pointer"
+                          style={{
+                            backgroundColor: isScheduled ? 'var(--color-priority-low)' : 'var(--color-background)',
+                            color: isScheduled ? 'white' : 'var(--color-text-tertiary)',
+                            border: `1px solid ${isScheduled ? 'var(--color-priority-low)' : 'var(--color-border)'}`,
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            paddingLeft: '0.5rem',
+                            paddingRight: '0.5rem',
+                          }}
                         >
-                          {isScheduled ? `#${mission.missionNumber}` : '—'}
-                        </button>
+                          <option value="">—</option>
+                          {mission.missionNumber !== undefined && (
+                            <option value={mission.missionNumber}>#{mission.missionNumber}</option>
+                          )}
+                          {getAvailableMissionNumbers(mission.id).map(n => (
+                            <option key={n} value={n}>#{n}</option>
+                          ))}
+                        </select>
 
                         {/* Mission info */}
                         <div className="flex-1 min-w-0">

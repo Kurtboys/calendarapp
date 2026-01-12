@@ -3,15 +3,10 @@
 /*
  * Söhne Font Setup
  *
- * Option 1: If you have Söhne installed on your system, it will be used automatically.
- *
- * Option 2: To include Söhne font files in your project:
- * 1. Create a /public/fonts folder
- * 2. Add your Söhne font files (e.g., Soehne-Buch.woff2, Soehne-Kraftig.woff2, etc.)
- * 3. Uncomment the @font-face declarations below
+ * Add your Söhne font files (.woff2) to /public/fonts/
+ * Expected files: Soehne-Buch.woff2, Soehne-Kraftig.woff2, Soehne-Halbfett.woff2, Soehne-Dreiviertelfett.woff2
  */
 
-/*
 @font-face {
   font-family: 'Söhne';
   src: url('/fonts/Soehne-Buch.woff2') format('woff2');
@@ -43,7 +38,6 @@
   font-style: normal;
   font-display: swap;
 }
-*/
 
 @theme {
   --font-family-sans: 'Söhne', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
