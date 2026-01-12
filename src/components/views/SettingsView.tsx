@@ -322,6 +322,64 @@ export function SettingsView() {
               Clear All Data
             </button>
           </div>
+
+          {/* Developer/Testing Tools */}
+          <div
+            className="p-6 rounded-xl"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <h2
+              className="text-lg font-semibold mb-2"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              Testing Tools
+            </h2>
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              Useful for testing login/logout flows. These won't delete your missions list or completed history.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (confirm('Reset day session? This will log you out and let you test login again. Your missions list and history are preserved.')) {
+                    // Clear only day-related state
+                    localStorage.removeItem('dayConfig');
+                    localStorage.removeItem('activeMission');
+                    localStorage.removeItem('lastSession');
+                    window.location.reload();
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: 'var(--color-accent)',
+                  color: 'white',
+                }}
+              >
+                Reset Day Session
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Clear saved session? This removes any same-day re-login data.')) {
+                    localStorage.removeItem('lastSession');
+                    alert('Saved session cleared!');
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Clear Saved Session
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
