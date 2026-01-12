@@ -2,15 +2,12 @@
 
 /*
  * Söhne Font Setup
- *
- * Add your Söhne font files (.woff2) to /public/fonts/
- * Expected files: soehne-medium.woff2, soehne-semibold.woff2, soehne-mono-medium.woff2, soehne-mono-semibold.woff2
  */
 
 /* Söhne (Sans) */
 @font-face {
   font-family: 'Söhne';
-  src: url('/fonts/soehne-medium.woff2') format('woff2');
+  src: url('/fonts/test-soehne-kraftig.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -18,7 +15,7 @@
 
 @font-face {
   font-family: 'Söhne';
-  src: url('/fonts/soehne-semibold.woff2') format('woff2');
+  src: url('/fonts/test-soehne-halbfett.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -27,7 +24,7 @@
 /* Söhne Mono */
 @font-face {
   font-family: 'Söhne Mono';
-  src: url('/fonts/soehne-mono-medium.woff2') format('woff2');
+  src: url('/fonts/test-soehne-mono-kraftig.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -35,7 +32,7 @@
 
 @font-face {
   font-family: 'Söhne Mono';
-  src: url('/fonts/soehne-mono-semibold.woff2') format('woff2');
+  src: url('/fonts/test-soehne-mono-halbfett.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
