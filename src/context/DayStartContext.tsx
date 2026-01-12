@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import type { DayConfig, Mission, Checkpoint, MissionListItem, MissionCategory, CompletedMission, UserSettings, ScheduledDay, CognitiveLevel, MinimumViableSession, EnergyState, MissionRecommendation } from '../types';
 import { COGNITIVE_LEVELS } from '../types';
-import { formatDate, addDays, getCurrentHour } from '../utils/date';
+import { formatDate, addDays, getCurrentHour, getEffectiveDate } from '../utils/date';
 
 type AppStep = 'home' | 'energy-selection' | 'recommendations' | 'logged-in' | 'logout-flow';
 
@@ -281,7 +281,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
 
   // Start login flow - shows energy selection
   const startLoginFlow = useCallback(() => {
-    const today = formatDate(new Date());
+    const today = formatDate(getEffectiveDate());
     const startTime = getCurrentHour();
 
     // Check if there's a saved session from earlier today (same-day re-login)
@@ -1232,7 +1232,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [getCurrentMission]);
 
   const getBriefingData = useCallback(() => {
-    const today = formatDate(new Date());
+    const today = formatDate(getEffectiveDate());
     const scheduledForToday = scheduledDays.find(sd => sd.date === today);
     const todayMissions = scheduledForToday?.missions || [];
 
