@@ -61,6 +61,8 @@ export async function generateContextQuestions(
 
 Task: "${taskTitle}"
 
+IMPORTANT: Always use the EXACT task title provided above. Do not shorten, abbreviate, or modify it in any way.
+
 For each question, provide exactly 3 specific options that help clarify the task state, PLUS the question should allow for an optional "I want to add more detail" choice (handled separately in the UI).
 
 The questions should help determine:
@@ -231,6 +233,8 @@ export async function generateBreakdown(
   const prompt = `You are an expert at breaking down tasks for people with ADHD. Your job is to take a task and break it into clear, actionable checkpoints.
 
 Task: "${request.taskTitle}"
+
+IMPORTANT: Always use the EXACT task title provided above. Do not shorten, abbreviate, or modify it in any way when referencing the task.
 
 Breakdown Level: ${levelInfo.name} (${levelInfo.description})
 Target: ${levelInfo.checkpointRange}
