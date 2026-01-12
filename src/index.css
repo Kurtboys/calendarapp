@@ -8,6 +8,14 @@
 @font-face {
   font-family: 'Söhne';
   src: url('/calendarapp/fonts/test-soehne-kraftig.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Söhne';
+  src: url('/calendarapp/fonts/test-soehne-kraftig.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -21,7 +29,23 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Söhne';
+  src: url('/calendarapp/fonts/test-soehne-halbfett.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Söhne Mono */
+@font-face {
+  font-family: 'Söhne Mono';
+  src: url('/calendarapp/fonts/test-soehne-mono-kraftig.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'Söhne Mono';
   src: url('/calendarapp/fonts/test-soehne-mono-kraftig.woff2') format('woff2');
@@ -34,6 +58,14 @@
   font-family: 'Söhne Mono';
   src: url('/calendarapp/fonts/test-soehne-mono-halbfett.woff2') format('woff2');
   font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Söhne Mono';
+  src: url('/calendarapp/fonts/test-soehne-mono-halbfett.woff2') format('woff2');
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
