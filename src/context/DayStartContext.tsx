@@ -1,44 +1,77 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { DayConfig, Mission, Checkpoint, RepeatingMission } from '../types';
-import { getEffectiveDateString, hasNewDayStarted, getCurrentHour } from '../utils/date';
+import type { DayConfig, Mission, Checkpoint, MissionListItem, MissionCategory, CompletedMission, UserSettings, ScheduledDay } from '../types';
+import { formatDate, addDays, getCurrentHour } from '../utils/date';
 
-type DayStartStep = 'ready' | 'configure' | 'complete';
+type AppStep = 'home' | 'logged-in' | 'logout-flow';
 
 interface ActiveMissionState {
   missionId: string;
-  checkpointId: string | null; // null if working on mission without checkpoints
-  startedAt: number; // timestamp when current checkpoint/mission started
-  timeCap: number; // minutes for current checkpoint or mission
+  checkpointId: string | null;
+  startedAt: number;
+  timeCap: number;
+}
+
+interface LogoutFlowState {
+  step: 'unfinished-missions' | 'plan-tomorrow';
+  unfinishedMissions: Mission[];
+  currentIndex: number;
 }
 
 interface DayStartContextType {
-  step: DayStartStep;
+  // App state
+  appStep: AppStep;
   dayConfig: DayConfig | null;
-  currentDayDate: string;
   activeMission: ActiveMissionState | null;
-  repeatingMissions: RepeatingMission[];
-  bottleneckedMissions: Mission[]; // missions moved to bottleneck view
+  logoutFlow: LogoutFlowState | null;
 
-  // Step transitions
-  proceedToConfig: () => void;
-  completeSetup: (endTime: number) => void;
+  // Missions list (unscheduled missions by category)
+  missionsList: MissionListItem[];
 
-  // Mission management
+  // Scheduled days (future days with missions)
+  scheduledDays: ScheduledDay[];
+
+  // Completed missions history
+  completedMissions: CompletedMission[];
+
+  // Bottlenecked missions
+  bottleneckedMissions: Mission[];
+
+  // User settings
+  userSettings: UserSettings;
+
+  // Login/Logout
+  loginForDay: () => void;
+  startLogout: () => void;
+  handleUnfinishedMission: (missionId: string, action: 'tomorrow' | 'missions-list', category?: MissionCategory) => void;
+  skipPlanTomorrow: () => void;
+  finishLogout: () => void;
+  getTomorrowDate: () => string;
+
+  // Mission management (for today)
   addMission: (title: string, duration: number) => void;
   updateMission: (id: string, updates: Partial<Mission>) => void;
   deleteMission: (id: string) => void;
-  reorderMissions: (missionIds: string[]) => void;
   assignMissionNumber: (missionId: string, number: number | undefined) => void;
+
+  // Missions list management
+  addToMissionsList: (title: string, duration: number, category: MissionCategory) => void;
+  updateMissionListItem: (id: string, updates: Partial<MissionListItem>) => void;
+  deleteMissionListItem: (id: string) => void;
+  moveMissionListItemToCategory: (id: string, category: MissionCategory) => void;
+  scheduleMissionFromList: (listItemId: string, date: string) => void;
+
+  // Scheduled days management
+  addMissionToDay: (date: string, title: string, duration: number) => void;
+  getMissionsForDay: (date: string) => Mission[];
+  moveMissionToDay: (missionId: string, fromDate: string, toDate: string) => void;
 
   // Checkpoint management
   addCheckpoint: (missionId: string, title: string, duration: number) => void;
   updateCheckpoint: (missionId: string, checkpointId: string, updates: Partial<Checkpoint>) => void;
   deleteCheckpoint: (missionId: string, checkpointId: string) => void;
-  reorderCheckpoints: (missionId: string, checkpointIds: string[]) => void;
-
-  // Repeating mission management
-  toggleMissionRepeating: (missionId: string) => void;
+  addCheckpointToListItem: (listItemId: string, title: string, duration: number) => void;
+  deleteCheckpointFromListItem: (listItemId: string, checkpointIndex: number) => void;
 
   // Active mission management
   startMission: (missionId: string) => void;
@@ -50,182 +83,257 @@ interface DayStartContextType {
   // Bottleneck management
   reportBottleneck: (reason: string, impedesProgress: boolean) => void;
   resolveBottleneck: (missionId: string) => void;
-  moveBottleneckToDay: (missionId: string, date: string) => void;
 
-  // Get current mission/checkpoint for Mission Mode
+  // Settings
+  updateSettings: (updates: Partial<UserSettings>) => void;
+
+  // Get current mission/checkpoint
   getCurrentMission: () => Mission | null;
   getCurrentCheckpoint: () => Checkpoint | null;
-  getAssignedMissions: () => Mission[]; // missions with numbers, sorted by number
-  getUnassignedMissions: () => Mission[]; // missions without numbers (in sidebar)
+  getAssignedMissions: () => Mission[];
+  getUnassignedMissions: () => Mission[];
+
+  // Briefing data for home page
+  getBriefingData: () => {
+    todayMissions: Mission[];
+    totalCheckpoints: number;
+    carriedOver: Mission[];
+  };
 }
 
 const DayStartContext = createContext<DayStartContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'dayConfig';
-const ACTIVE_MISSION_KEY = 'activeMission';
-const REPEATING_MISSIONS_KEY = 'repeatingMissions';
-const BOTTLENECKED_MISSIONS_KEY = 'bottleneckedMissions';
+// Storage keys
+const STORAGE_KEYS = {
+  dayConfig: 'dayConfig',
+  activeMission: 'activeMission',
+  missionsList: 'missionsList',
+  scheduledDays: 'scheduledDays',
+  completedMissions: 'completedMissions',
+  bottleneckedMissions: 'bottleneckedMissions',
+  userSettings: 'userSettings',
+  carriedOverMissions: 'carriedOverMissions',
+};
 
-function loadDayConfig(): DayConfig | null {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) return null;
+// Default settings
+const DEFAULT_SETTINGS: UserSettings = {
+  defaultEndTime: 2, // 2 AM next day
+};
+
+// Storage helpers
+function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
-    const config = JSON.parse(stored);
-    // Migration: convert old 'goals' to 'missions'
-    if (config.goals && !config.missions) {
-      config.missions = config.goals.map((g: any) => ({
-        ...g,
-        checkpoints: [],
-        currentCheckpointIndex: 0,
-      }));
-      delete config.goals;
-    }
-    return config;
-  } catch {
-    return null;
-  }
-}
-
-function saveDayConfig(config: DayConfig | null) {
-  if (config) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-}
-
-function loadActiveMission(): ActiveMissionState | null {
-  const stored = localStorage.getItem(ACTIVE_MISSION_KEY);
-  if (!stored) return null;
-  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return defaultValue;
     return JSON.parse(stored);
   } catch {
-    return null;
+    return defaultValue;
   }
 }
 
-function saveActiveMission(state: ActiveMissionState | null) {
-  if (state) {
-    localStorage.setItem(ACTIVE_MISSION_KEY, JSON.stringify(state));
-  } else {
-    localStorage.removeItem(ACTIVE_MISSION_KEY);
-  }
-}
-
-function loadRepeatingMissions(): RepeatingMission[] {
-  const stored = localStorage.getItem(REPEATING_MISSIONS_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch {
-    return [];
-  }
-}
-
-function saveRepeatingMissions(missions: RepeatingMission[]) {
-  localStorage.setItem(REPEATING_MISSIONS_KEY, JSON.stringify(missions));
-}
-
-function loadBottleneckedMissions(): Mission[] {
-  const stored = localStorage.getItem(BOTTLENECKED_MISSIONS_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch {
-    return [];
-  }
-}
-
-function saveBottleneckedMissions(missions: Mission[]) {
-  localStorage.setItem(BOTTLENECKED_MISSIONS_KEY, JSON.stringify(missions));
+function saveToStorage<T>(key: string, value: T): void {
+  localStorage.setItem(key, JSON.stringify(value));
 }
 
 export function DayStartProvider({ children }: { children: ReactNode }) {
-  const [dayConfig, setDayConfig] = useState<DayConfig | null>(() => loadDayConfig());
-  const [activeMission, setActiveMission] = useState<ActiveMissionState | null>(() => loadActiveMission());
-  const [repeatingMissions, setRepeatingMissions] = useState<RepeatingMission[]>(() => loadRepeatingMissions());
-  const [bottleneckedMissions, setBottleneckedMissions] = useState<Mission[]>(() => loadBottleneckedMissions());
+  const [dayConfig, setDayConfig] = useState<DayConfig | null>(() => loadFromStorage(STORAGE_KEYS.dayConfig, null));
+  const [activeMission, setActiveMission] = useState<ActiveMissionState | null>(() => loadFromStorage(STORAGE_KEYS.activeMission, null));
+  const [missionsList, setMissionsList] = useState<MissionListItem[]>(() => loadFromStorage(STORAGE_KEYS.missionsList, []));
+  const [scheduledDays, setScheduledDays] = useState<ScheduledDay[]>(() => loadFromStorage(STORAGE_KEYS.scheduledDays, []));
+  const [completedMissions, setCompletedMissions] = useState<CompletedMission[]>(() => loadFromStorage(STORAGE_KEYS.completedMissions, []));
+  const [bottleneckedMissions, setBottleneckedMissions] = useState<Mission[]>(() => loadFromStorage(STORAGE_KEYS.bottleneckedMissions, []));
+  const [userSettings, setUserSettings] = useState<UserSettings>(() => loadFromStorage(STORAGE_KEYS.userSettings, DEFAULT_SETTINGS));
+  const [carriedOverMissions, setCarriedOverMissions] = useState<Mission[]>(() => loadFromStorage(STORAGE_KEYS.carriedOverMissions, []));
+  const [logoutFlow, setLogoutFlow] = useState<LogoutFlowState | null>(null);
 
-  const currentDayDate = getEffectiveDateString();
-
-  // Determine current step based on state
-  const getStep = (): DayStartStep => {
-    if (!dayConfig || hasNewDayStarted(dayConfig.date)) {
-      return 'ready';
-    }
-    return 'complete';
+  // Determine app step
+  const getAppStep = (): AppStep => {
+    if (logoutFlow) return 'logout-flow';
+    if (dayConfig) return 'logged-in';
+    return 'home';
   };
 
-  const [step, setStep] = useState<DayStartStep>(getStep);
+  const [appStep, setAppStep] = useState<AppStep>(getAppStep);
 
-  // Clear active mission on new day
+  // Update app step when dependencies change
   useEffect(() => {
-    if (hasNewDayStarted(dayConfig?.date || null)) {
-      setActiveMission(null);
-      saveActiveMission(null);
+    setAppStep(getAppStep());
+  }, [dayConfig, logoutFlow]);
+
+  // Get tomorrow based on login day (not clock)
+  const getTomorrowDate = useCallback((): string => {
+    if (dayConfig) {
+      // Tomorrow is the day after the logged-in day
+      const loginDate = new Date(dayConfig.date + 'T12:00:00');
+      return formatDate(addDays(loginDate, 1));
     }
-  }, [dayConfig?.date]);
+    // If not logged in, tomorrow is based on current date
+    return formatDate(addDays(new Date(), 1));
+  }, [dayConfig]);
 
-  // Check for day changes periodically
-  useEffect(() => {
-    const checkDayChange = () => {
-      const newStep = getStep();
-      if (newStep !== step) {
-        setStep(newStep);
-      }
-    };
-
-    const interval = setInterval(checkDayChange, 60000);
-    return () => clearInterval(interval);
-  }, [step, dayConfig]);
-
-  // Update step when dayConfig changes
-  useEffect(() => {
-    setStep(getStep());
-  }, [dayConfig?.date]);
-
-  const proceedToConfig = useCallback(() => {
-    setStep('configure');
-  }, []);
-
-  const completeSetup = useCallback((endTime: number) => {
-    // Auto-capture current hour as start time
+  // Login for the day
+  const loginForDay = useCallback(() => {
+    const today = formatDate(new Date());
     const startTime = getCurrentHour();
-    const existingMissions = dayConfig?.date === currentDayDate ? dayConfig.missions : [];
 
-    // Create missions from repeating missions if this is a fresh day
-    const newRepeatingMissionInstances: Mission[] = dayConfig?.date !== currentDayDate
-      ? repeatingMissions.map((rm, index) => ({
-          id: crypto.randomUUID(),
-          title: rm.title,
-          duration: rm.duration,
-          order: index,
-          completed: false,
-          checkpoints: rm.checkpoints.map((cp, cpIndex) => ({
-            id: crypto.randomUUID(),
-            title: cp.title,
-            duration: cp.duration,
-            order: cpIndex,
-            completed: false,
-          })),
-          currentCheckpointIndex: 0,
-          isRepeating: true,
-          repeatingMissionId: rm.id,
-        }))
-      : [];
+    // Check if there are missions scheduled for today
+    const scheduledForToday = scheduledDays.find(sd => sd.date === today);
+    const todayMissions = scheduledForToday?.missions || [];
+
+    // Include carried over missions
+    const allMissions = [...carriedOverMissions, ...todayMissions];
 
     const newConfig: DayConfig = {
-      date: currentDayDate,
+      date: today,
       startTime,
-      endTime,
-      missions: existingMissions.length > 0 ? existingMissions : newRepeatingMissionInstances,
+      endTime: userSettings.defaultEndTime,
+      missions: allMissions,
       startedAt: new Date().toISOString(),
     };
-    setDayConfig(newConfig);
-    saveDayConfig(newConfig);
-    setStep('complete');
-  }, [currentDayDate, dayConfig, repeatingMissions]);
 
+    setDayConfig(newConfig);
+    saveToStorage(STORAGE_KEYS.dayConfig, newConfig);
+
+    // Clear carried over since they're now in today
+    setCarriedOverMissions([]);
+    saveToStorage(STORAGE_KEYS.carriedOverMissions, []);
+
+    // Remove today from scheduled days
+    if (scheduledForToday) {
+      const updated = scheduledDays.filter(sd => sd.date !== today);
+      setScheduledDays(updated);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updated);
+    }
+  }, [scheduledDays, carriedOverMissions, userSettings.defaultEndTime]);
+
+  // Start logout flow
+  const startLogout = useCallback(() => {
+    if (!dayConfig) return;
+
+    const unfinished = dayConfig.missions.filter(m => !m.completed && !m.isBottleneck);
+
+    if (unfinished.length > 0) {
+      setLogoutFlow({
+        step: 'unfinished-missions',
+        unfinishedMissions: unfinished,
+        currentIndex: 0,
+      });
+    } else {
+      setLogoutFlow({
+        step: 'plan-tomorrow',
+        unfinishedMissions: [],
+        currentIndex: 0,
+      });
+    }
+  }, [dayConfig]);
+
+  // Handle unfinished mission during logout
+  const handleUnfinishedMission = useCallback((missionId: string, action: 'tomorrow' | 'missions-list', category?: MissionCategory) => {
+    if (!logoutFlow || !dayConfig) return;
+
+    const mission = logoutFlow.unfinishedMissions.find(m => m.id === missionId);
+    if (!mission) return;
+
+    if (action === 'tomorrow') {
+      // Move to tomorrow (carried over)
+      const tomorrowDate = getTomorrowDate();
+      const updatedScheduledDays = [...scheduledDays];
+      const tomorrowIndex = updatedScheduledDays.findIndex(sd => sd.date === tomorrowDate);
+
+      const missionForTomorrow: Mission = {
+        ...mission,
+        missionNumber: undefined, // Reset mission number
+        order: 0,
+      };
+
+      if (tomorrowIndex >= 0) {
+        updatedScheduledDays[tomorrowIndex].missions.push(missionForTomorrow);
+      } else {
+        updatedScheduledDays.push({
+          date: tomorrowDate,
+          missions: [missionForTomorrow],
+        });
+      }
+
+      setScheduledDays(updatedScheduledDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedScheduledDays);
+    } else if (action === 'missions-list' && category) {
+      // Move to missions list
+      const newListItem: MissionListItem = {
+        id: crypto.randomUUID(),
+        title: mission.title,
+        duration: mission.duration,
+        checkpoints: mission.checkpoints.map(cp => ({
+          id: cp.id,
+          title: cp.title,
+          duration: cp.duration,
+          order: cp.order,
+        })),
+        category,
+        createdAt: new Date().toISOString(),
+        order: missionsList.filter(m => m.category === category).length,
+      };
+
+      const updatedList = [...missionsList, newListItem];
+      setMissionsList(updatedList);
+      saveToStorage(STORAGE_KEYS.missionsList, updatedList);
+    }
+
+    // Move to next unfinished mission or plan tomorrow
+    const nextIndex = logoutFlow.currentIndex + 1;
+    if (nextIndex < logoutFlow.unfinishedMissions.length) {
+      setLogoutFlow({
+        ...logoutFlow,
+        currentIndex: nextIndex,
+      });
+    } else {
+      setLogoutFlow({
+        step: 'plan-tomorrow',
+        unfinishedMissions: [],
+        currentIndex: 0,
+      });
+    }
+  }, [logoutFlow, dayConfig, scheduledDays, missionsList, getTomorrowDate]);
+
+  // Skip planning tomorrow
+  const skipPlanTomorrow = useCallback(() => {
+    finishLogout();
+  }, []);
+
+  // Finish logout
+  const finishLogout = useCallback(() => {
+    // Save completed missions to history
+    if (dayConfig) {
+      const newCompleted = dayConfig.missions
+        .filter(m => m.completed)
+        .map(m => ({
+          id: m.id,
+          title: m.title,
+          duration: m.duration,
+          timeSpent: m.timeSpent || 0,
+          checkpoints: m.checkpoints,
+          completedAt: m.completedAt || new Date().toISOString(),
+          completedDate: dayConfig.date,
+        }));
+
+      const updatedCompleted = [...completedMissions, ...newCompleted];
+      setCompletedMissions(updatedCompleted);
+      saveToStorage(STORAGE_KEYS.completedMissions, updatedCompleted);
+    }
+
+    // Clear day config
+    setDayConfig(null);
+    saveToStorage(STORAGE_KEYS.dayConfig, null);
+
+    // Clear active mission
+    setActiveMission(null);
+    saveToStorage(STORAGE_KEYS.activeMission, null);
+
+    // Clear logout flow
+    setLogoutFlow(null);
+  }, [dayConfig, completedMissions]);
+
+  // Mission management for today
   const addMission = useCallback((title: string, duration: number) => {
     if (!dayConfig) return;
 
@@ -244,7 +352,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       missions: [...dayConfig.missions, newMission],
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
 
   const updateMission = useCallback((id: string, updates: Partial<Mission>) => {
@@ -252,12 +360,10 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
 
     const updated = {
       ...dayConfig,
-      missions: dayConfig.missions.map(m =>
-        m.id === id ? { ...m, ...updates } : m
-      ),
+      missions: dayConfig.missions.map(m => m.id === id ? { ...m, ...updates } : m),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
 
   const deleteMission = useCallback((id: string) => {
@@ -265,49 +371,20 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
 
     if (activeMission?.missionId === id) {
       setActiveMission(null);
-      saveActiveMission(null);
+      saveToStorage(STORAGE_KEYS.activeMission, null);
     }
 
-    const filtered = dayConfig.missions.filter(m => m.id !== id);
-    const pendingMissions = filtered.filter(m => !m.completed && !m.isBottleneck);
-    const otherMissions = filtered.filter(m => m.completed || m.isBottleneck);
-    const reordered = [
-      ...pendingMissions.map((m, i) => ({ ...m, order: i })),
-      ...otherMissions,
-    ];
-
     const updated = {
       ...dayConfig,
-      missions: reordered,
+      missions: dayConfig.missions.filter(m => m.id !== id),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig, activeMission]);
-
-  const reorderMissions = useCallback((missionIds: string[]) => {
-    if (!dayConfig) return;
-
-    const reordered = missionIds.map((id, index) => {
-      const mission = dayConfig.missions.find(m => m.id === id);
-      return mission ? { ...mission, order: index } : null;
-    }).filter((m): m is Mission => m !== null);
-
-    const otherMissions = dayConfig.missions.filter(m =>
-      !missionIds.includes(m.id)
-    );
-
-    const updated = {
-      ...dayConfig,
-      missions: [...reordered, ...otherMissions],
-    };
-    setDayConfig(updated);
-    saveDayConfig(updated);
-  }, [dayConfig]);
 
   const assignMissionNumber = useCallback((missionId: string, number: number | undefined) => {
     if (!dayConfig) return;
 
-    // If assigning a number, first remove that number from any other mission
     let updatedMissions = dayConfig.missions;
     if (number !== undefined) {
       updatedMissions = dayConfig.missions.map(m =>
@@ -315,18 +392,210 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    // Now assign the number to the target mission
     updatedMissions = updatedMissions.map(m =>
       m.id === missionId ? { ...m, missionNumber: number } : m
     );
 
-    const updated = {
-      ...dayConfig,
-      missions: updatedMissions,
-    };
+    const updated = { ...dayConfig, missions: updatedMissions };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
+
+  // Missions list management
+  const addToMissionsList = useCallback((title: string, duration: number, category: MissionCategory) => {
+    const newItem: MissionListItem = {
+      id: crypto.randomUUID(),
+      title,
+      duration,
+      checkpoints: [],
+      category,
+      createdAt: new Date().toISOString(),
+      order: missionsList.filter(m => m.category === category).length,
+    };
+
+    const updated = [...missionsList, newItem];
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
+
+  const updateMissionListItem = useCallback((id: string, updates: Partial<MissionListItem>) => {
+    const updated = missionsList.map(m => m.id === id ? { ...m, ...updates } : m);
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
+
+  const deleteMissionListItem = useCallback((id: string) => {
+    const updated = missionsList.filter(m => m.id !== id);
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
+
+  const moveMissionListItemToCategory = useCallback((id: string, category: MissionCategory) => {
+    const updated = missionsList.map(m =>
+      m.id === id ? { ...m, category, order: missionsList.filter(x => x.category === category).length } : m
+    );
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
+
+  const scheduleMissionFromList = useCallback((listItemId: string, date: string) => {
+    const listItem = missionsList.find(m => m.id === listItemId);
+    if (!listItem) return;
+
+    // Create mission from list item
+    const newMission: Mission = {
+      id: crypto.randomUUID(),
+      title: listItem.title,
+      duration: listItem.duration,
+      order: 0,
+      completed: false,
+      checkpoints: listItem.checkpoints.map((cp) => ({
+        ...cp,
+        id: crypto.randomUUID(),
+        completed: false,
+      })),
+      currentCheckpointIndex: 0,
+    };
+
+    // Add to scheduled day or today
+    const today = dayConfig?.date;
+
+    if (today && date === today) {
+      // Add to today
+      const updated = {
+        ...dayConfig,
+        missions: [...dayConfig.missions, newMission],
+      };
+      setDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
+    } else {
+      // Add to scheduled day
+      const updatedDays = [...scheduledDays];
+      const dayIndex = updatedDays.findIndex(sd => sd.date === date);
+
+      if (dayIndex >= 0) {
+        updatedDays[dayIndex].missions.push(newMission);
+      } else {
+        updatedDays.push({ date, missions: [newMission] });
+      }
+
+      setScheduledDays(updatedDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+    }
+
+    // Remove from missions list
+    const updatedList = missionsList.filter(m => m.id !== listItemId);
+    setMissionsList(updatedList);
+    saveToStorage(STORAGE_KEYS.missionsList, updatedList);
+  }, [missionsList, dayConfig, scheduledDays]);
+
+  // Scheduled days management
+  const addMissionToDay = useCallback((date: string, title: string, duration: number) => {
+    const newMission: Mission = {
+      id: crypto.randomUUID(),
+      title,
+      duration,
+      order: 0,
+      completed: false,
+      checkpoints: [],
+      currentCheckpointIndex: 0,
+      scheduledDate: date,
+    };
+
+    const today = dayConfig?.date;
+
+    if (today && date === today) {
+      // Add to today's config
+      const updated = {
+        ...dayConfig,
+        missions: [...dayConfig.missions, newMission],
+      };
+      setDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
+    } else {
+      // Add to scheduled days
+      const updatedDays = [...scheduledDays];
+      const dayIndex = updatedDays.findIndex(sd => sd.date === date);
+
+      if (dayIndex >= 0) {
+        updatedDays[dayIndex].missions.push(newMission);
+      } else {
+        updatedDays.push({ date, missions: [newMission] });
+      }
+
+      setScheduledDays(updatedDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+    }
+  }, [dayConfig, scheduledDays]);
+
+  const getMissionsForDay = useCallback((date: string): Mission[] => {
+    const today = dayConfig?.date;
+
+    if (today && date === today) {
+      return dayConfig?.missions || [];
+    }
+
+    const scheduled = scheduledDays.find(sd => sd.date === date);
+    return scheduled?.missions || [];
+  }, [dayConfig, scheduledDays]);
+
+  const moveMissionToDay = useCallback((missionId: string, fromDate: string, toDate: string) => {
+    const today = dayConfig?.date;
+    let mission: Mission | undefined;
+
+    // Find and remove mission from source
+    if (today && fromDate === today) {
+      mission = dayConfig?.missions.find(m => m.id === missionId);
+      if (mission) {
+        const updated = {
+          ...dayConfig!,
+          missions: dayConfig!.missions.filter(m => m.id !== missionId),
+        };
+        setDayConfig(updated);
+        saveToStorage(STORAGE_KEYS.dayConfig, updated);
+      }
+    } else {
+      const dayIndex = scheduledDays.findIndex(sd => sd.date === fromDate);
+      if (dayIndex >= 0) {
+        mission = scheduledDays[dayIndex].missions.find(m => m.id === missionId);
+        if (mission) {
+          const updatedDays = [...scheduledDays];
+          updatedDays[dayIndex].missions = updatedDays[dayIndex].missions.filter(m => m.id !== missionId);
+          if (updatedDays[dayIndex].missions.length === 0) {
+            updatedDays.splice(dayIndex, 1);
+          }
+          setScheduledDays(updatedDays);
+          saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+        }
+      }
+    }
+
+    if (!mission) return;
+
+    // Add to destination
+    const movedMission = { ...mission, missionNumber: undefined, scheduledDate: toDate };
+
+    if (today && toDate === today) {
+      const updated = {
+        ...dayConfig!,
+        missions: [...dayConfig!.missions, movedMission],
+      };
+      setDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
+    } else {
+      const updatedDays = [...scheduledDays];
+      const dayIndex = updatedDays.findIndex(sd => sd.date === toDate);
+
+      if (dayIndex >= 0) {
+        updatedDays[dayIndex].missions.push(movedMission);
+      } else {
+        updatedDays.push({ date: toDate, missions: [movedMission] });
+      }
+
+      setScheduledDays(updatedDays);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
+    }
+  }, [dayConfig, scheduledDays]);
 
   // Checkpoint management
   const addCheckpoint = useCallback((missionId: string, title: string, duration: number) => {
@@ -346,13 +615,11 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const updated = {
       ...dayConfig,
       missions: dayConfig.missions.map(m =>
-        m.id === missionId
-          ? { ...m, checkpoints: [...m.checkpoints, newCheckpoint] }
-          : m
+        m.id === missionId ? { ...m, checkpoints: [...m.checkpoints, newCheckpoint] } : m
       ),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
 
   const updateCheckpoint = useCallback((missionId: string, checkpointId: string, updates: Partial<Checkpoint>) => {
@@ -362,17 +629,12 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       ...dayConfig,
       missions: dayConfig.missions.map(m =>
         m.id === missionId
-          ? {
-              ...m,
-              checkpoints: m.checkpoints.map(cp =>
-                cp.id === checkpointId ? { ...cp, ...updates } : cp
-              ),
-            }
+          ? { ...m, checkpoints: m.checkpoints.map(cp => cp.id === checkpointId ? { ...cp, ...updates } : cp) }
           : m
       ),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
 
   const deleteCheckpoint = useCallback((missionId: string, checkpointId: string) => {
@@ -382,80 +644,41 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       ...dayConfig,
       missions: dayConfig.missions.map(m => {
         if (m.id !== missionId) return m;
-
         const filtered = m.checkpoints.filter(cp => cp.id !== checkpointId);
-        const reordered = filtered.map((cp, i) => ({ ...cp, order: i }));
-
-        return {
-          ...m,
-          checkpoints: reordered,
-          currentCheckpointIndex: Math.min(m.currentCheckpointIndex, Math.max(0, reordered.length - 1)),
-        };
+        return { ...m, checkpoints: filtered.map((cp, i) => ({ ...cp, order: i })) };
       }),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
   }, [dayConfig]);
 
-  const reorderCheckpoints = useCallback((missionId: string, checkpointIds: string[]) => {
-    if (!dayConfig) return;
-
-    const updated = {
-      ...dayConfig,
-      missions: dayConfig.missions.map(m => {
-        if (m.id !== missionId) return m;
-
-        const reordered = checkpointIds.map((id, index) => {
-          const cp = m.checkpoints.find(c => c.id === id);
-          return cp ? { ...cp, order: index } : null;
-        }).filter((cp): cp is Checkpoint => cp !== null);
-
-        return { ...m, checkpoints: reordered };
-      }),
-    };
-    setDayConfig(updated);
-    saveDayConfig(updated);
-  }, [dayConfig]);
-
-  const toggleMissionRepeating = useCallback((missionId: string) => {
-    if (!dayConfig) return;
-
-    const mission = dayConfig.missions.find(m => m.id === missionId);
-    if (!mission) return;
-
-    if (mission.isRepeating) {
-      // Remove from repeating missions
-      if (mission.repeatingMissionId) {
-        const updatedRepeating = repeatingMissions.filter(rm => rm.id !== mission.repeatingMissionId);
-        setRepeatingMissions(updatedRepeating);
-        saveRepeatingMissions(updatedRepeating);
-      }
-      updateMission(missionId, { isRepeating: false, repeatingMissionId: undefined });
-    } else {
-      // Add to repeating missions
-      const newRepeatingMission: RepeatingMission = {
-        id: crypto.randomUUID(),
-        title: mission.title,
-        duration: mission.duration,
-        checkpoints: mission.checkpoints.map(cp => ({
-          title: cp.title,
-          duration: cp.duration,
-          order: cp.order,
-        })),
-        order: repeatingMissions.length,
+  const addCheckpointToListItem = useCallback((listItemId: string, title: string, duration: number) => {
+    const updated = missionsList.map(m => {
+      if (m.id !== listItemId) return m;
+      return {
+        ...m,
+        checkpoints: [...m.checkpoints, { id: crypto.randomUUID(), title, duration, order: m.checkpoints.length }],
       };
-      const updatedRepeating = [...repeatingMissions, newRepeatingMission];
-      setRepeatingMissions(updatedRepeating);
-      saveRepeatingMissions(updatedRepeating);
-      updateMission(missionId, { isRepeating: true, repeatingMissionId: newRepeatingMission.id });
-    }
-  }, [dayConfig, repeatingMissions, updateMission]);
+    });
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
 
+  const deleteCheckpointFromListItem = useCallback((listItemId: string, checkpointIndex: number) => {
+    const updated = missionsList.map(m => {
+      if (m.id !== listItemId) return m;
+      const filtered = m.checkpoints.filter((_, i) => i !== checkpointIndex);
+      return { ...m, checkpoints: filtered.map((cp, i) => ({ ...cp, order: i })) };
+    });
+    setMissionsList(updated);
+    saveToStorage(STORAGE_KEYS.missionsList, updated);
+  }, [missionsList]);
+
+  // Active mission management
   const startMission = useCallback((missionId: string) => {
     const mission = dayConfig?.missions.find(m => m.id === missionId);
     if (!mission) return;
 
-    // Find first incomplete checkpoint, or use mission if no checkpoints
     const firstIncompleteCheckpoint = mission.checkpoints.find(cp => !cp.completed);
 
     const newActiveMission: ActiveMissionState = {
@@ -465,14 +688,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       timeCap: firstIncompleteCheckpoint?.duration || mission.duration,
     };
     setActiveMission(newActiveMission);
-    saveActiveMission(newActiveMission);
-
-    // Update current checkpoint index
-    if (firstIncompleteCheckpoint) {
-      const checkpointIndex = mission.checkpoints.findIndex(cp => cp.id === firstIncompleteCheckpoint.id);
-      updateMission(missionId, { currentCheckpointIndex: checkpointIndex });
-    }
-  }, [dayConfig, updateMission]);
+    saveToStorage(STORAGE_KEYS.activeMission, newActiveMission);
+  }, [dayConfig]);
 
   const completeCurrentCheckpoint = useCallback(() => {
     if (!activeMission || !dayConfig) return;
@@ -483,62 +700,47 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const timeSpent = Math.round((Date.now() - activeMission.startedAt) / 60000);
 
     if (activeMission.checkpointId) {
-      // Complete the current checkpoint
       const updatedCheckpoints = mission.checkpoints.map(cp =>
         cp.id === activeMission.checkpointId
           ? { ...cp, completed: true, completedAt: new Date().toISOString(), timeSpent }
           : cp
       );
 
-      // Find next incomplete checkpoint
       const nextIncomplete = updatedCheckpoints.find(cp => !cp.completed);
 
       if (nextIncomplete) {
-        // Move to next checkpoint
-        const nextIndex = updatedCheckpoints.findIndex(cp => cp.id === nextIncomplete.id);
-
         const updated = {
           ...dayConfig,
           missions: dayConfig.missions.map(m =>
-            m.id === mission.id
-              ? { ...m, checkpoints: updatedCheckpoints, currentCheckpointIndex: nextIndex }
-              : m
+            m.id === mission.id ? { ...m, checkpoints: updatedCheckpoints } : m
           ),
         };
         setDayConfig(updated);
-        saveDayConfig(updated);
+        saveToStorage(STORAGE_KEYS.dayConfig, updated);
 
-        // Update active mission to next checkpoint
-        const newActiveMission: ActiveMissionState = {
+        const newActive: ActiveMissionState = {
           missionId: mission.id,
           checkpointId: nextIncomplete.id,
           startedAt: Date.now(),
           timeCap: nextIncomplete.duration,
         };
-        setActiveMission(newActiveMission);
-        saveActiveMission(newActiveMission);
+        setActiveMission(newActive);
+        saveToStorage(STORAGE_KEYS.activeMission, newActive);
       } else {
-        // All checkpoints done - complete the mission
         const totalTimeSpent = updatedCheckpoints.reduce((sum, cp) => sum + (cp.timeSpent || 0), 0);
 
         const updated = {
           ...dayConfig,
           missions: dayConfig.missions.map(m =>
             m.id === mission.id
-              ? {
-                  ...m,
-                  checkpoints: updatedCheckpoints,
-                  completed: true,
-                  completedAt: new Date().toISOString(),
-                  timeSpent: totalTimeSpent,
-                }
+              ? { ...m, checkpoints: updatedCheckpoints, completed: true, completedAt: new Date().toISOString(), timeSpent: totalTimeSpent }
               : m
           ),
         };
         setDayConfig(updated);
-        saveDayConfig(updated);
+        saveToStorage(STORAGE_KEYS.dayConfig, updated);
         setActiveMission(null);
-        saveActiveMission(null);
+        saveToStorage(STORAGE_KEYS.activeMission, null);
       }
     }
   }, [activeMission, dayConfig]);
@@ -549,7 +751,6 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const mission = dayConfig.missions.find(m => m.id === activeMission.missionId);
     if (!mission) return;
 
-    // If mission has incomplete checkpoints, can't complete
     const hasIncompleteCheckpoints = mission.checkpoints.some(cp => !cp.completed);
     if (hasIncompleteCheckpoints) return;
 
@@ -560,35 +761,26 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       ...dayConfig,
       missions: dayConfig.missions.map(m =>
         m.id === activeMission.missionId
-          ? {
-              ...m,
-              completed: true,
-              completedAt: new Date().toISOString(),
-              timeSpent: totalTimeSpent,
-            }
+          ? { ...m, completed: true, completedAt: new Date().toISOString(), timeSpent: totalTimeSpent }
           : m
       ),
     };
     setDayConfig(updated);
-    saveDayConfig(updated);
+    saveToStorage(STORAGE_KEYS.dayConfig, updated);
     setActiveMission(null);
-    saveActiveMission(null);
+    saveToStorage(STORAGE_KEYS.activeMission, null);
   }, [activeMission, dayConfig]);
 
   const cancelActiveMission = useCallback(() => {
     setActiveMission(null);
-    saveActiveMission(null);
+    saveToStorage(STORAGE_KEYS.activeMission, null);
   }, []);
 
   const updateTimeCap = useCallback((minutes: number) => {
     if (!activeMission) return;
-
-    const updated = {
-      ...activeMission,
-      timeCap: minutes,
-    };
+    const updated = { ...activeMission, timeCap: minutes };
     setActiveMission(updated);
-    saveActiveMission(updated);
+    saveToStorage(STORAGE_KEYS.activeMission, updated);
   }, [activeMission]);
 
   // Bottleneck management
@@ -599,7 +791,6 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     if (!currentMission) return;
 
     if (impedesProgress) {
-      // Move current mission to bottleneck view
       const bottleneckedMission: Mission = {
         ...currentMission,
         isBottleneck: true,
@@ -607,52 +798,41 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         bottleneckDate: new Date().toISOString(),
       };
 
-      // Create a new bottleneck-fix mission that jumps to front
       const bottleneckFixMission: Mission = {
         id: crypto.randomUUID(),
         title: `Fix: ${reason}`,
-        duration: 30, // Default 30 min
-        order: -1, // Will be reordered to front
+        duration: 30,
+        order: 0,
         completed: false,
         checkpoints: [],
         currentCheckpointIndex: 0,
         parentMissionId: currentMission.id,
       };
 
-      // Remove current mission from active list and add bottleneck fix
       const updatedMissions = dayConfig.missions
         .filter(m => m.id !== currentMission.id)
-        .map(m => ({ ...m, order: m.order + 1 })); // Shift all orders up
-
-      bottleneckFixMission.order = 0; // Put at front
+        .map(m => ({ ...m, order: m.order + 1 }));
 
       const updated = {
         ...dayConfig,
         missions: [bottleneckFixMission, ...updatedMissions],
       };
       setDayConfig(updated);
-      saveDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
 
-      // Add to bottlenecked missions
       const updatedBottlenecked = [...bottleneckedMissions, bottleneckedMission];
       setBottleneckedMissions(updatedBottlenecked);
-      saveBottleneckedMissions(updatedBottlenecked);
+      saveToStorage(STORAGE_KEYS.bottleneckedMissions, updatedBottlenecked);
 
-      // Start the bottleneck fix mission
-      setActiveMission({
+      const newActive: ActiveMissionState = {
         missionId: bottleneckFixMission.id,
         checkpointId: null,
         startedAt: Date.now(),
         timeCap: bottleneckFixMission.duration,
-      });
-      saveActiveMission({
-        missionId: bottleneckFixMission.id,
-        checkpointId: null,
-        startedAt: Date.now(),
-        timeCap: bottleneckFixMission.duration,
-      });
+      };
+      setActiveMission(newActive);
+      saveToStorage(STORAGE_KEYS.activeMission, newActive);
     } else {
-      // Add bottleneck mission to end of queue
       const bottleneckMission: Mission = {
         id: crypto.randomUUID(),
         title: `Address: ${reason}`,
@@ -669,21 +849,18 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         missions: [...dayConfig.missions, bottleneckMission],
       };
       setDayConfig(updated);
-      saveDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
     }
   }, [activeMission, dayConfig, bottleneckedMissions]);
 
   const resolveBottleneck = useCallback((missionId: string) => {
-    // Find the bottlenecked mission
     const mission = bottleneckedMissions.find(m => m.id === missionId);
     if (!mission) return;
 
-    // Remove from bottlenecked list
     const updatedBottlenecked = bottleneckedMissions.filter(m => m.id !== missionId);
     setBottleneckedMissions(updatedBottlenecked);
-    saveBottleneckedMissions(updatedBottlenecked);
+    saveToStorage(STORAGE_KEYS.bottleneckedMissions, updatedBottlenecked);
 
-    // Add back to today's missions (at the end)
     if (dayConfig) {
       const restoredMission: Mission = {
         ...mission,
@@ -698,72 +875,91 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         missions: [...dayConfig.missions, restoredMission],
       };
       setDayConfig(updated);
-      saveDayConfig(updated);
+      saveToStorage(STORAGE_KEYS.dayConfig, updated);
     }
   }, [bottleneckedMissions, dayConfig]);
 
-  const moveBottleneckToDay = useCallback((missionId: string, _date: string) => {
-    // For now, just keep in bottleneck view - full date moving would need more infrastructure
-    // This could be expanded to store missions per date
-    console.log(`Would move mission ${missionId} to ${_date}`);
-  }, []);
+  // Settings
+  const updateSettings = useCallback((updates: Partial<UserSettings>) => {
+    const updated = { ...userSettings, ...updates };
+    setUserSettings(updated);
+    saveToStorage(STORAGE_KEYS.userSettings, updated);
+  }, [userSettings]);
 
-  // Get assigned missions (have mission numbers) sorted by number
+  // Getters
   const getAssignedMissions = useCallback((): Mission[] => {
     if (!dayConfig) return [];
-
     return dayConfig.missions
       .filter(m => !m.completed && !m.isBottleneck && m.missionNumber !== undefined)
       .sort((a, b) => (a.missionNumber || 0) - (b.missionNumber || 0));
   }, [dayConfig]);
 
-  // Get unassigned missions (no mission number) - shown in sidebar
   const getUnassignedMissions = useCallback((): Mission[] => {
     if (!dayConfig) return [];
-
     return dayConfig.missions
       .filter(m => !m.completed && !m.isBottleneck && m.missionNumber === undefined)
       .sort((a, b) => a.order - b.order);
   }, [dayConfig]);
 
-  // Get current mission for Mission Mode (first incomplete assigned mission by number)
   const getCurrentMission = useCallback((): Mission | null => {
-    const assignedMissions = getAssignedMissions();
-    return assignedMissions[0] || null;
+    const assigned = getAssignedMissions();
+    return assigned[0] || null;
   }, [getAssignedMissions]);
 
-  // Get current checkpoint for Mission Mode
   const getCurrentCheckpoint = useCallback((): Checkpoint | null => {
     const currentMission = getCurrentMission();
     if (!currentMission || currentMission.checkpoints.length === 0) return null;
-
-    const incompleteCheckpoint = currentMission.checkpoints
-      .sort((a, b) => a.order - b.order)
-      .find(cp => !cp.completed);
-
-    return incompleteCheckpoint || null;
+    return currentMission.checkpoints.find(cp => !cp.completed) || null;
   }, [getCurrentMission]);
+
+  const getBriefingData = useCallback(() => {
+    const today = formatDate(new Date());
+    const scheduledForToday = scheduledDays.find(sd => sd.date === today);
+    const todayMissions = scheduledForToday?.missions || [];
+
+    const totalCheckpoints = todayMissions.reduce((sum, m) => sum + m.checkpoints.length, 0);
+
+    return {
+      todayMissions,
+      totalCheckpoints,
+      carriedOver: carriedOverMissions,
+    };
+  }, [scheduledDays, carriedOverMissions]);
 
   return (
     <DayStartContext.Provider value={{
-      step,
+      appStep,
       dayConfig,
-      currentDayDate,
       activeMission,
-      repeatingMissions,
+      logoutFlow,
+      missionsList,
+      scheduledDays,
+      completedMissions,
       bottleneckedMissions,
-      proceedToConfig,
-      completeSetup,
+      userSettings,
+      loginForDay,
+      startLogout,
+      handleUnfinishedMission,
+      skipPlanTomorrow,
+      finishLogout,
+      getTomorrowDate,
       addMission,
       updateMission,
       deleteMission,
-      reorderMissions,
       assignMissionNumber,
+      addToMissionsList,
+      updateMissionListItem,
+      deleteMissionListItem,
+      moveMissionListItemToCategory,
+      scheduleMissionFromList,
+      addMissionToDay,
+      getMissionsForDay,
+      moveMissionToDay,
       addCheckpoint,
       updateCheckpoint,
       deleteCheckpoint,
-      reorderCheckpoints,
-      toggleMissionRepeating,
+      addCheckpointToListItem,
+      deleteCheckpointFromListItem,
       startMission,
       completeCurrentCheckpoint,
       completeMission,
@@ -771,11 +967,12 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       updateTimeCap,
       reportBottleneck,
       resolveBottleneck,
-      moveBottleneckToDay,
+      updateSettings,
       getCurrentMission,
       getCurrentCheckpoint,
       getAssignedMissions,
       getUnassignedMissions,
+      getBriefingData,
     }}>
       {children}
     </DayStartContext.Provider>

@@ -1,15 +1,34 @@
 import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
+import type { MissionCategory, MissionListItem } from '../../types';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName, formatDate, getMonthGrid } from '../../utils/date';
+
+const CATEGORY_LABELS: Record<MissionCategory, string> = {
+  'need-to-do-soon': 'Need to do soon',
+  'can-wait': 'Can wait',
+  'sometime-future': 'Sometime in the future',
+};
+
+const CATEGORY_COLORS: Record<MissionCategory, string> = {
+  'need-to-do-soon': 'var(--color-priority-high)',
+  'can-wait': 'var(--color-priority-medium)',
+  'sometime-future': 'var(--color-text-tertiary)',
+};
 
 export function SchedulerView() {
   const {
     dayConfig,
-    addMission,
-    updateMission,
+    missionsList,
+    scheduledDays,
+    addMissionToDay,
+    getMissionsForDay,
+    addToMissionsList,
+    deleteMissionListItem,
+    moveMissionListItemToCategory,
+    scheduleMissionFromList,
+    addCheckpointToListItem,
+    deleteCheckpointFromListItem,
     deleteMission,
-    addCheckpoint,
-    deleteCheckpoint,
     assignMissionNumber,
     getAssignedMissions,
     getUnassignedMissions,
@@ -20,66 +39,58 @@ export function SchedulerView() {
   const [newMissionTitle, setNewMissionTitle] = useState('');
   const [newMissionDuration, setNewMissionDuration] = useState(30);
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
-  const [newCheckpointTitle, setNewCheckpointTitle] = useState('');
-  const [newCheckpointDuration, setNewCheckpointDuration] = useState(15);
-  const [editingMissionId, setEditingMissionId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
+  const [expandedListItemId, setExpandedListItemId] = useState<string | null>(null);
+
+  // For adding to missions list
+  const [showAddToList, setShowAddToList] = useState(false);
+  const [newListMissionTitle, setNewListMissionTitle] = useState('');
+  const [newListMissionDuration, setNewListMissionDuration] = useState(30);
+  const [newListMissionCategory, setNewListMissionCategory] = useState<MissionCategory | ''>('');
 
   const effectiveDate = getEffectiveDate();
-  const isToday = formatDate(selectedDate) === formatDate(effectiveDate);
   const selectedDateStr = formatDate(selectedDate);
   const configDateStr = dayConfig?.date;
+  const isToday = selectedDateStr === formatDate(effectiveDate) && configDateStr === selectedDateStr;
 
-  // Only show missions for today (the configured day)
-  const canEditMissions = isToday && configDateStr === selectedDateStr;
-  const assignedMissions = canEditMissions ? getAssignedMissions() : [];
-  const unassignedMissions = canEditMissions ? getUnassignedMissions() : [];
-  const allMissions = [...assignedMissions, ...unassignedMissions];
+  // Get missions for selected day
+  const selectedDayMissions = getMissionsForDay(selectedDateStr);
+  const assignedMissions = isToday ? getAssignedMissions() : [];
+  const unassignedMissions = isToday ? getUnassignedMissions() : [];
+  const allTodayMissions = isToday ? [...assignedMissions, ...unassignedMissions] : selectedDayMissions;
 
   const monthDates = getMonthGrid(calendarMonth);
 
-  const handleAddMission = useCallback(() => {
-    if (!newMissionTitle.trim() || !canEditMissions) return;
-    addMission(newMissionTitle.trim(), newMissionDuration);
+  // Group missions list by category
+  const missionsByCategory = {
+    'need-to-do-soon': missionsList.filter(m => m.category === 'need-to-do-soon'),
+    'can-wait': missionsList.filter(m => m.category === 'can-wait'),
+    'sometime-future': missionsList.filter(m => m.category === 'sometime-future'),
+  };
+
+  const handleAddMissionToDay = useCallback(() => {
+    if (!newMissionTitle.trim()) return;
+    addMissionToDay(selectedDateStr, newMissionTitle.trim(), newMissionDuration);
     setNewMissionTitle('');
     setNewMissionDuration(30);
-  }, [newMissionTitle, newMissionDuration, addMission, canEditMissions]);
+  }, [newMissionTitle, newMissionDuration, addMissionToDay, selectedDateStr]);
 
-  const handleAddCheckpoint = useCallback((missionId: string) => {
-    if (!newCheckpointTitle.trim()) return;
-    addCheckpoint(missionId, newCheckpointTitle.trim(), newCheckpointDuration);
-    setNewCheckpointTitle('');
-    setNewCheckpointDuration(15);
-  }, [newCheckpointTitle, newCheckpointDuration, addCheckpoint]);
+  const handleAddToMissionsList = useCallback(() => {
+    if (!newListMissionTitle.trim() || !newListMissionCategory) return;
+    addToMissionsList(newListMissionTitle.trim(), newListMissionDuration, newListMissionCategory);
+    setNewListMissionTitle('');
+    setNewListMissionDuration(30);
+    setNewListMissionCategory('');
+    setShowAddToList(false);
+  }, [newListMissionTitle, newListMissionDuration, newListMissionCategory, addToMissionsList]);
+
+  const handleScheduleFromList = useCallback((listItemId: string) => {
+    scheduleMissionFromList(listItemId, selectedDateStr);
+  }, [scheduleMissionFromList, selectedDateStr]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleAddMission();
+      handleAddMissionToDay();
     }
-  };
-
-  const handleCheckpointKeyDown = (e: React.KeyboardEvent, missionId: string) => {
-    if (e.key === 'Enter') {
-      handleAddCheckpoint(missionId);
-    }
-  };
-
-  const startEditing = (mission: typeof allMissions[0]) => {
-    setEditingMissionId(mission.id);
-    setEditingTitle(mission.title);
-  };
-
-  const saveEditing = () => {
-    if (editingMissionId && editingTitle.trim()) {
-      updateMission(editingMissionId, { title: editingTitle.trim() });
-    }
-    setEditingMissionId(null);
-    setEditingTitle('');
-  };
-
-  const cancelEditing = () => {
-    setEditingMissionId(null);
-    setEditingTitle('');
   };
 
   // Get available mission numbers (1-15 minus already assigned)
@@ -97,91 +108,108 @@ export function SchedulerView() {
     setCalendarMonth(newDate);
   };
 
+  // Check if a day has scheduled missions
+  const getDayMissionCount = (dateStr: string) => {
+    if (configDateStr === dateStr && dayConfig) {
+      return dayConfig.missions.length;
+    }
+    const scheduled = scheduledDays.find(sd => sd.date === dateStr);
+    return scheduled?.missions.length || 0;
+  };
+
   return (
     <div className="h-full flex">
-      {/* Left side - Calendar */}
+      {/* Left side - Calendar and Missions List */}
       <div
-        className="w-80 flex-shrink-0 border-r p-4 overflow-auto"
+        className="w-80 flex-shrink-0 border-r overflow-auto"
         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
       >
-        {/* Month navigation */}
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={() => navigateMonth(-1)}
-            className="p-2 rounded-lg transition-colors"
-            style={{ color: 'var(--color-text-secondary)' }}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
-            {getMonthName(calendarMonth)} {calendarMonth.getFullYear()}
-          </h2>
-          <button
-            onClick={() => navigateMonth(1)}
-            className="p-2 rounded-lg transition-colors"
-            style={{ color: 'var(--color-text-secondary)' }}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Day headers */}
-        <div className="grid grid-cols-7 gap-1 mb-2">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div
-              key={day}
-              className="text-center text-xs font-medium py-2"
-              style={{ color: 'var(--color-text-tertiary)' }}
+        {/* Calendar */}
+        <div className="p-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
+          {/* Month navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => navigateMonth(-1)}
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
-              {day}
-            </div>
-          ))}
-        </div>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2
+              className="text-lg font-semibold"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              {getMonthName(calendarMonth)} {calendarMonth.getFullYear()}
+            </h2>
+            <button
+              onClick={() => navigateMonth(1)}
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
 
-        {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-1">
-          {monthDates.map((date, idx) => {
-            const dateStr = formatDate(date);
-            const isSelected = dateStr === selectedDateStr;
-            const isEffectiveToday = dateStr === formatDate(effectiveDate);
-            const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
-
-            return (
-              <button
-                key={idx}
-                onClick={() => setSelectedDate(date)}
-                className="aspect-square rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  backgroundColor: isSelected
-                    ? 'var(--color-accent)'
-                    : isEffectiveToday
-                    ? 'var(--color-accent-light)'
-                    : 'transparent',
-                  color: isSelected
-                    ? 'white'
-                    : isCurrentMonth
-                    ? 'var(--color-text-primary)'
-                    : 'var(--color-text-tertiary)',
-                }}
+          {/* Day headers */}
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+              <div
+                key={i}
+                className="text-center text-xs font-medium py-1"
+                style={{ color: 'var(--color-text-tertiary)' }}
               >
-                {date.getDate()}
-              </button>
-            );
-          })}
-        </div>
+                {day}
+              </div>
+            ))}
+          </div>
 
-        {/* Quick actions */}
-        <div className="mt-4 space-y-2">
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {monthDates.map((date, idx) => {
+              const dateStr = formatDate(date);
+              const isSelected = dateStr === selectedDateStr;
+              const isEffectiveToday = dateStr === formatDate(effectiveDate);
+              const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
+              const missionCount = getDayMissionCount(dateStr);
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedDate(date)}
+                  className="relative aspect-square rounded-lg text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: isSelected
+                      ? 'var(--color-accent)'
+                      : isEffectiveToday
+                      ? 'var(--color-accent-light)'
+                      : 'transparent',
+                    color: isSelected
+                      ? 'white'
+                      : isCurrentMonth
+                      ? 'var(--color-text-primary)'
+                      : 'var(--color-text-tertiary)',
+                  }}
+                >
+                  {date.getDate()}
+                  {missionCount > 0 && !isSelected && (
+                    <span
+                      className="absolute bottom-0.5 left-1/2 transform -translate-x-1/2 w-1 h-1 rounded-full"
+                      style={{ backgroundColor: 'var(--color-accent)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick actions */}
           <button
             onClick={() => setSelectedDate(effectiveDate)}
-            className="w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            className="w-full mt-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
             style={{
               backgroundColor: 'var(--color-background)',
               color: 'var(--color-text-secondary)',
@@ -191,9 +219,137 @@ export function SchedulerView() {
             Jump to Today
           </button>
         </div>
+
+        {/* Missions List */}
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3
+              className="text-sm font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              Missions List
+            </h3>
+            <button
+              onClick={() => setShowAddToList(!showAddToList)}
+              className="p-1 rounded-lg transition-colors"
+              style={{ color: 'var(--color-accent)' }}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Add to list form */}
+          {showAddToList && (
+            <div
+              className="p-3 rounded-lg mb-4"
+              style={{ backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)' }}
+            >
+              <input
+                type="text"
+                value={newListMissionTitle}
+                onChange={(e) => setNewListMissionTitle(e.target.value)}
+                placeholder="Mission title..."
+                className="w-full px-3 py-2 rounded-lg text-sm mb-2"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              />
+              <div className="flex gap-2 mb-2">
+                <select
+                  value={newListMissionDuration}
+                  onChange={(e) => setNewListMissionDuration(Number(e.target.value))}
+                  className="flex-1 px-2 py-2 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  <option value={15}>15m</option>
+                  <option value={30}>30m</option>
+                  <option value={45}>45m</option>
+                  <option value={60}>1h</option>
+                  <option value={90}>1.5h</option>
+                  <option value={120}>2h</option>
+                </select>
+              </div>
+              <div className="space-y-1 mb-2">
+                {(Object.keys(CATEGORY_LABELS) as MissionCategory[]).map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setNewListMissionCategory(cat)}
+                    className="w-full px-2 py-1.5 rounded text-left text-xs transition-colors"
+                    style={{
+                      backgroundColor: newListMissionCategory === cat ? 'var(--color-accent-light)' : 'transparent',
+                      color: newListMissionCategory === cat ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                      border: newListMissionCategory === cat ? '1px solid var(--color-accent)' : '1px solid transparent',
+                    }}
+                  >
+                    {CATEGORY_LABELS[cat]}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleAddToMissionsList}
+                disabled={!newListMissionTitle.trim() || !newListMissionCategory}
+                className="w-full px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+              >
+                Add to List
+              </button>
+            </div>
+          )}
+
+          {/* Categories */}
+          <div className="space-y-4">
+            {(Object.keys(CATEGORY_LABELS) as MissionCategory[]).map((category) => {
+              const items = missionsByCategory[category];
+              return (
+                <div key={category}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: CATEGORY_COLORS[category] }}
+                    />
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: 'var(--color-text-secondary)' }}
+                    >
+                      {CATEGORY_LABELS[category]} ({items.length})
+                    </span>
+                  </div>
+                  {items.length > 0 && (
+                    <div className="space-y-1">
+                      {items.map((item) => (
+                        <MissionListCard
+                          key={item.id}
+                          item={item}
+                          isExpanded={expandedListItemId === item.id}
+                          onToggleExpand={() => setExpandedListItemId(expandedListItemId === item.id ? null : item.id)}
+                          onSchedule={() => handleScheduleFromList(item.id)}
+                          onDelete={() => deleteMissionListItem(item.id)}
+                          onMoveToCategory={(cat) => moveMissionListItemToCategory(item.id, cat)}
+                          onAddCheckpoint={(title, duration) => {
+                            addCheckpointToListItem(item.id, title, duration);
+                          }}
+                          onDeleteCheckpoint={(idx) => deleteCheckpointFromListItem(item.id, idx)}
+                          selectedDateLabel={`${getMonthName(selectedDate).slice(0, 3)} ${selectedDate.getDate()}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Right side - Mission editor */}
+      {/* Right side - Day missions */}
       <div className="flex-1 overflow-auto p-6">
         {/* Selected date header */}
         <div className="mb-6">
@@ -208,354 +364,468 @@ export function SchedulerView() {
               Today - Edit missions below
             </p>
           )}
-          {!isToday && (
+          {!isToday && selectedDate >= effectiveDate && (
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
-              {selectedDate < effectiveDate ? 'Past day' : 'Future day'} - Scheduling for future days coming soon
+              Future day - Schedule missions for this day
+            </p>
+          )}
+          {selectedDate < effectiveDate && (
+            <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+              Past day
             </p>
           )}
         </div>
 
-        {canEditMissions ? (
-          <>
-            {/* Add new mission */}
-            <div
-              className="mb-6 p-4 rounded-xl"
-              style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        {/* Add new mission (for today and future days) */}
+        {selectedDate >= effectiveDate && (
+          <div
+            className="mb-6 p-4 rounded-xl"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <h3
+              className="text-sm font-semibold uppercase tracking-wider mb-3"
+              style={{ color: 'var(--color-text-tertiary)' }}
             >
-              <h3
-                className="text-sm font-semibold uppercase tracking-wider mb-3"
+              Add Mission to {isToday ? 'Today' : `${getMonthName(selectedDate).slice(0, 3)} ${selectedDate.getDate()}`}
+            </h3>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={newMissionTitle}
+                onChange={(e) => setNewMissionTitle(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Mission title..."
+                className="flex-1 px-4 py-3 rounded-lg"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              />
+              <select
+                value={newMissionDuration}
+                onChange={(e) => setNewMissionDuration(Number(e.target.value))}
+                className="px-4 py-3 rounded-lg"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <option value={15}>15m</option>
+                <option value={30}>30m</option>
+                <option value={45}>45m</option>
+                <option value={60}>1h</option>
+                <option value={90}>1.5h</option>
+                <option value={120}>2h</option>
+                <option value={180}>3h</option>
+                <option value={240}>4h</option>
+              </select>
+              <button
+                onClick={handleAddMissionToDay}
+                disabled={!newMissionTitle.trim()}
+                className="px-6 py-3 rounded-lg font-medium disabled:opacity-50"
+                style={{
+                  backgroundColor: 'var(--color-accent)',
+                  color: 'white',
+                }}
+              >
+                Add Mission
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mission list */}
+        <div className="space-y-4">
+          {allTodayMissions.length === 0 ? (
+            <div
+              className="text-center py-12 rounded-xl"
+              style={{ backgroundColor: 'var(--color-surface)' }}
+            >
+              <svg
+                className="w-12 h-12 mx-auto mb-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
-                Add New Mission
-              </h3>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={newMissionTitle}
-                  onChange={(e) => setNewMissionTitle(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Mission title..."
-                  className="flex-1 px-4 py-3 rounded-lg"
-                  style={{
-                    backgroundColor: 'var(--color-background)',
-                    color: 'var(--color-text-primary)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                />
-                <select
-                  value={newMissionDuration}
-                  onChange={(e) => setNewMissionDuration(Number(e.target.value))}
-                  className="px-4 py-3 rounded-lg"
-                  style={{
-                    backgroundColor: 'var(--color-background)',
-                    color: 'var(--color-text-primary)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  <option value={15}>15m</option>
-                  <option value={30}>30m</option>
-                  <option value={45}>45m</option>
-                  <option value={60}>1h</option>
-                  <option value={90}>1.5h</option>
-                  <option value={120}>2h</option>
-                  <option value={180}>3h</option>
-                  <option value={240}>4h</option>
-                </select>
-                <button
-                  onClick={handleAddMission}
-                  disabled={!newMissionTitle.trim()}
-                  className="px-6 py-3 rounded-lg font-medium disabled:opacity-50"
-                  style={{
-                    backgroundColor: 'var(--color-accent)',
-                    color: 'white',
-                  }}
-                >
-                  Add Mission
-                </button>
-              </div>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p style={{ color: 'var(--color-text-secondary)' }}>
+                No missions scheduled for this day.
+              </p>
+              <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                Add a mission above or drag one from your missions list.
+              </p>
             </div>
-
-            {/* Mission list */}
-            <div className="space-y-4">
-              {allMissions.length === 0 ? (
-                <div
-                  className="text-center py-12 rounded-xl"
-                  style={{ backgroundColor: 'var(--color-surface)' }}
-                >
-                  <p style={{ color: 'var(--color-text-secondary)' }}>
-                    No missions yet. Add your first mission above.
-                  </p>
-                </div>
-              ) : (
-                allMissions.map((mission) => (
-                  <div
-                    key={mission.id}
-                    className="rounded-xl overflow-hidden"
-                    style={{
-                      backgroundColor: 'var(--color-surface)',
-                      border: `2px solid ${mission.missionNumber ? 'var(--color-priority-low)' : 'var(--color-border)'}`,
-                    }}
-                  >
-                    {/* Mission header */}
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          {editingMissionId === mission.id ? (
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={editingTitle}
-                                onChange={(e) => setEditingTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') saveEditing();
-                                  if (e.key === 'Escape') cancelEditing();
-                                }}
-                                autoFocus
-                                className="flex-1 px-3 py-2 rounded-lg text-lg font-medium"
-                                style={{
-                                  backgroundColor: 'var(--color-background)',
-                                  color: 'var(--color-text-primary)',
-                                  border: '1px solid var(--color-accent)',
-                                }}
-                              />
-                              <button
-                                onClick={saveEditing}
-                                className="px-3 py-2 rounded-lg"
-                                style={{ backgroundColor: 'var(--color-priority-low)', color: 'white' }}
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={cancelEditing}
-                                className="px-3 py-2 rounded-lg"
-                                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-3">
-                              {mission.missionNumber && (
-                                <span
-                                  className="text-sm font-bold px-2 py-1 rounded"
-                                  style={{
-                                    backgroundColor: 'var(--color-priority-low)',
-                                    color: 'white',
-                                  }}
-                                >
-                                  #{mission.missionNumber}
-                                </span>
-                              )}
-                              <h3
-                                className="text-lg font-medium cursor-pointer hover:opacity-70"
-                                style={{ color: 'var(--color-text-primary)' }}
-                                onClick={() => startEditing(mission)}
-                              >
-                                {mission.title}
-                              </h3>
-                              <span
-                                className="text-sm px-2 py-1 rounded"
-                                style={{
-                                  backgroundColor: 'var(--color-background)',
-                                  color: 'var(--color-text-tertiary)',
-                                }}
-                              >
-                                {formatDuration(mission.duration)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {/* Mission number dropdown */}
-                          <select
-                            value={mission.missionNumber || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              assignMissionNumber(mission.id, val ? Number(val) : undefined);
-                            }}
-                            className="px-3 py-2 rounded-lg text-sm"
+          ) : (
+            allTodayMissions.map((mission) => (
+              <div
+                key={mission.id}
+                className="rounded-xl overflow-hidden"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: `2px solid ${mission.missionNumber ? 'var(--color-priority-low)' : 'var(--color-border)'}`,
+                }}
+              >
+                {/* Mission header */}
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        {mission.missionNumber && (
+                          <span
+                            className="text-sm font-bold px-2 py-1 rounded"
                             style={{
-                              backgroundColor: 'var(--color-background)',
-                              color: 'var(--color-text-primary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          >
-                            <option value="">No #</option>
-                            {mission.missionNumber && (
-                              <option value={mission.missionNumber}>#{mission.missionNumber}</option>
-                            )}
-                            {getAvailableMissionNumbers(mission.id).map(n => (
-                              <option key={n} value={n}>#{n}</option>
-                            ))}
-                          </select>
-
-                          {/* Expand checkpoints */}
-                          <button
-                            onClick={() => setExpandedMissionId(expandedMissionId === mission.id ? null : mission.id)}
-                            className="px-3 py-2 rounded-lg text-sm"
-                            style={{
-                              backgroundColor: expandedMissionId === mission.id ? 'var(--color-accent-light)' : 'var(--color-background)',
-                              color: expandedMissionId === mission.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          >
-                            Checkpoints ({mission.checkpoints.length})
-                          </button>
-
-                          {/* Delete */}
-                          <button
-                            onClick={() => deleteMission(mission.id)}
-                            className="p-2 rounded-lg transition-colors hover:opacity-70"
-                            style={{ color: 'var(--color-priority-urgent)' }}
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expanded checkpoints */}
-                    {expandedMissionId === mission.id && (
-                      <div
-                        className="p-4 border-t"
-                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}
-                      >
-                        {/* Existing checkpoints */}
-                        {mission.checkpoints.length > 0 && (
-                          <div className="space-y-2 mb-4">
-                            {mission.checkpoints.map((cp, idx) => (
-                              <div
-                                key={cp.id}
-                                className="flex items-center gap-3 p-3 rounded-lg"
-                                style={{ backgroundColor: 'var(--color-surface)' }}
-                              >
-                                <span
-                                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                                  style={{
-                                    backgroundColor: 'var(--color-accent-light)',
-                                    color: 'var(--color-accent)',
-                                  }}
-                                >
-                                  {idx + 1}
-                                </span>
-                                <span
-                                  className="flex-1"
-                                  style={{ color: 'var(--color-text-primary)' }}
-                                >
-                                  {cp.title}
-                                </span>
-                                <span
-                                  className="text-sm px-2 py-1 rounded"
-                                  style={{
-                                    backgroundColor: 'var(--color-background)',
-                                    color: 'var(--color-text-tertiary)',
-                                  }}
-                                >
-                                  {formatDuration(cp.duration)}
-                                </span>
-                                <button
-                                  onClick={() => deleteCheckpoint(mission.id, cp.id)}
-                                  className="p-1 rounded hover:opacity-70"
-                                  style={{ color: 'var(--color-text-tertiary)' }}
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Add checkpoint form */}
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={newCheckpointTitle}
-                            onChange={(e) => setNewCheckpointTitle(e.target.value)}
-                            onKeyDown={(e) => handleCheckpointKeyDown(e, mission.id)}
-                            placeholder="Add checkpoint..."
-                            className="flex-1 px-3 py-2 rounded-lg"
-                            style={{
-                              backgroundColor: 'var(--color-surface)',
-                              color: 'var(--color-text-primary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          />
-                          <select
-                            value={newCheckpointDuration}
-                            onChange={(e) => setNewCheckpointDuration(Number(e.target.value))}
-                            className="px-3 py-2 rounded-lg"
-                            style={{
-                              backgroundColor: 'var(--color-surface)',
-                              color: 'var(--color-text-primary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          >
-                            <option value={5}>5m</option>
-                            <option value={10}>10m</option>
-                            <option value={15}>15m</option>
-                            <option value={30}>30m</option>
-                            <option value={45}>45m</option>
-                            <option value={60}>1h</option>
-                          </select>
-                          <button
-                            onClick={() => handleAddCheckpoint(mission.id)}
-                            disabled={!newCheckpointTitle.trim()}
-                            className="px-4 py-2 rounded-lg font-medium disabled:opacity-50"
-                            style={{
-                              backgroundColor: 'var(--color-accent)',
+                              backgroundColor: 'var(--color-priority-low)',
                               color: 'white',
                             }}
                           >
-                            Add
-                          </button>
-                        </div>
+                            #{mission.missionNumber}
+                          </span>
+                        )}
+                        <h3
+                          className="text-lg font-medium"
+                          style={{ color: 'var(--color-text-primary)' }}
+                        >
+                          {mission.title}
+                        </h3>
+                        <span
+                          className="text-sm px-2 py-1 rounded"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-tertiary)',
+                          }}
+                        >
+                          {formatDuration(mission.duration)}
+                        </span>
                       </div>
+                      {mission.checkpoints.length > 0 && (
+                        <p
+                          className="text-sm mt-1"
+                          style={{ color: 'var(--color-text-tertiary)' }}
+                        >
+                          {mission.checkpoints.length} checkpoint{mission.checkpoints.length !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Mission number dropdown (only for today) */}
+                      {isToday && (
+                        <select
+                          value={mission.missionNumber || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            assignMissionNumber(mission.id, val ? Number(val) : undefined);
+                          }}
+                          className="px-3 py-2 rounded-lg text-sm"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-primary)',
+                            border: '1px solid var(--color-border)',
+                          }}
+                        >
+                          <option value="">No #</option>
+                          {mission.missionNumber && (
+                            <option value={mission.missionNumber}>#{mission.missionNumber}</option>
+                          )}
+                          {getAvailableMissionNumbers(mission.id).map(n => (
+                            <option key={n} value={n}>#{n}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      {/* Expand checkpoints */}
+                      <button
+                        onClick={() => setExpandedMissionId(expandedMissionId === mission.id ? null : mission.id)}
+                        className="px-3 py-2 rounded-lg text-sm"
+                        style={{
+                          backgroundColor: expandedMissionId === mission.id ? 'var(--color-accent-light)' : 'var(--color-background)',
+                          color: expandedMissionId === mission.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        Checkpoints
+                      </button>
+
+                      {/* Delete */}
+                      <button
+                        onClick={() => deleteMission(mission.id)}
+                        className="p-2 rounded-lg transition-colors hover:opacity-70"
+                        style={{ color: 'var(--color-priority-urgent)' }}
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded checkpoints */}
+                {expandedMissionId === mission.id && (
+                  <div
+                    className="p-4 border-t"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}
+                  >
+                    {mission.checkpoints.length > 0 ? (
+                      <div className="space-y-2">
+                        {mission.checkpoints.map((cp, idx) => (
+                          <div
+                            key={cp.id}
+                            className="flex items-center gap-3 p-3 rounded-lg"
+                            style={{ backgroundColor: 'var(--color-surface)' }}
+                          >
+                            <span
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                              style={{
+                                backgroundColor: cp.completed ? 'var(--color-priority-low)' : 'var(--color-accent-light)',
+                                color: cp.completed ? 'white' : 'var(--color-accent)',
+                              }}
+                            >
+                              {cp.completed ? '✓' : idx + 1}
+                            </span>
+                            <span
+                              className="flex-1"
+                              style={{ color: 'var(--color-text-primary)' }}
+                            >
+                              {cp.title}
+                            </span>
+                            <span
+                              className="text-sm px-2 py-1 rounded"
+                              style={{
+                                backgroundColor: 'var(--color-background)',
+                                color: 'var(--color-text-tertiary)',
+                              }}
+                            >
+                              {formatDuration(cp.duration)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p
+                        className="text-center py-4 text-sm"
+                        style={{ color: 'var(--color-text-tertiary)' }}
+                      >
+                        No checkpoints. Add checkpoints when creating missions in the missions list.
+                      </p>
                     )}
                   </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          <div
-            className="text-center py-16 rounded-xl"
-            style={{ backgroundColor: 'var(--color-surface)' }}
-          >
-            <svg
-              className="w-16 h-16 mx-auto mb-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="var(--color-text-tertiary)"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Mission List Card Component
+interface MissionListCardProps {
+  item: MissionListItem;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onSchedule: () => void;
+  onDelete: () => void;
+  onMoveToCategory: (category: MissionCategory) => void;
+  onAddCheckpoint: (title: string, duration: number) => void;
+  onDeleteCheckpoint: (index: number) => void;
+  selectedDateLabel: string;
+}
+
+function MissionListCard({
+  item,
+  isExpanded,
+  onToggleExpand,
+  onSchedule,
+  onDelete,
+  onMoveToCategory,
+  onAddCheckpoint,
+  onDeleteCheckpoint,
+  selectedDateLabel,
+}: MissionListCardProps) {
+  const [newCpTitle, setNewCpTitle] = useState('');
+  const [newCpDuration, setNewCpDuration] = useState(15);
+  const [showMoveMenu, setShowMoveMenu] = useState(false);
+
+  const handleAddCp = () => {
+    if (!newCpTitle.trim()) return;
+    onAddCheckpoint(newCpTitle.trim(), newCpDuration);
+    setNewCpTitle('');
+    setNewCpDuration(15);
+  };
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{ backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="p-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
             <p
-              className="text-lg font-medium mb-2"
+              className="text-sm font-medium truncate"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              {item.title}
+            </p>
+            <p
+              className="text-xs"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              {formatDuration(item.duration)} &middot; {item.checkpoints.length} cp
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggleExpand}
+              className="p-1 rounded hover:opacity-70"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              {selectedDate < effectiveDate ? 'Past Day' : 'Future Day'}
-            </p>
-            <p style={{ color: 'var(--color-text-tertiary)' }}>
-              You can only edit missions for today. Select today from the calendar to add or modify missions.
-            </p>
-            <button
-              onClick={() => setSelectedDate(effectiveDate)}
-              className="mt-4 px-4 py-2 rounded-lg font-medium"
-              style={{
-                backgroundColor: 'var(--color-accent)',
-                color: 'white',
-              }}
-            >
-              Go to Today
+              <svg
+                className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
           </div>
-        )}
+        </div>
       </div>
+
+      {isExpanded && (
+        <div
+          className="p-2 border-t"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {/* Checkpoints */}
+          {item.checkpoints.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {item.checkpoints.map((cp, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-2 text-xs p-1.5 rounded"
+                  style={{ backgroundColor: 'var(--color-surface)' }}
+                >
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>{idx + 1}.</span>
+                  <span className="flex-1" style={{ color: 'var(--color-text-secondary)' }}>{cp.title}</span>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>{formatDuration(cp.duration)}</span>
+                  <button
+                    onClick={() => onDeleteCheckpoint(idx)}
+                    className="p-0.5 rounded hover:opacity-70"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add checkpoint */}
+          <div className="flex gap-1 mb-2">
+            <input
+              type="text"
+              value={newCpTitle}
+              onChange={(e) => setNewCpTitle(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddCp()}
+              placeholder="Add checkpoint..."
+              className="flex-1 px-2 py-1 rounded text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border)',
+              }}
+            />
+            <select
+              value={newCpDuration}
+              onChange={(e) => setNewCpDuration(Number(e.target.value))}
+              className="px-1 py-1 rounded text-xs"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              <option value={5}>5m</option>
+              <option value={10}>10m</option>
+              <option value={15}>15m</option>
+              <option value={30}>30m</option>
+            </select>
+            <button
+              onClick={handleAddCp}
+              disabled={!newCpTitle.trim()}
+              className="px-2 py-1 rounded text-xs font-medium disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+            >
+              +
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-1">
+            <button
+              onClick={onSchedule}
+              className="flex-1 px-2 py-1.5 rounded text-xs font-medium"
+              style={{ backgroundColor: 'var(--color-priority-low)', color: 'white' }}
+            >
+              Schedule ({selectedDateLabel})
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowMoveMenu(!showMoveMenu)}
+                className="px-2 py-1.5 rounded text-xs"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  color: 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Move
+              </button>
+              {showMoveMenu && (
+                <div
+                  className="absolute bottom-full left-0 mb-1 w-40 rounded-lg shadow-lg z-10"
+                  style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                >
+                  {(Object.keys(CATEGORY_LABELS) as MissionCategory[])
+                    .filter(cat => cat !== item.category)
+                    .map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          onMoveToCategory(cat);
+                          setShowMoveMenu(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-xs hover:opacity-70"
+                        style={{ color: 'var(--color-text-primary)' }}
+                      >
+                        {CATEGORY_LABELS[cat]}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={onDelete}
+              className="px-2 py-1.5 rounded text-xs"
+              style={{ color: 'var(--color-priority-urgent)' }}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
