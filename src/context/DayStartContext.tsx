@@ -125,6 +125,7 @@ const STORAGE_KEYS = {
   bottleneckedMissions: 'bottleneckedMissions',
   userSettings: 'userSettings',
   carriedOverMissions: 'carriedOverMissions',
+  lastSession: 'lastSession', // Preserves session for same-day re-login
 };
 
 // Default settings
@@ -283,12 +284,35 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     const today = formatDate(new Date());
     const startTime = getCurrentHour();
 
+    // Check if there's a saved session from earlier today (same-day re-login)
+    const lastSession = loadFromStorage<{ date: string; missions: Mission[]; savedAt: string } | null>(
+      STORAGE_KEYS.lastSession,
+      null
+    );
+
     // Check if there are missions scheduled for today
     const scheduledForToday = scheduledDays.find(sd => sd.date === today);
     const todayMissions = scheduledForToday?.missions || [];
 
     // Include carried over missions
-    const allMissions = [...carriedOverMissions, ...todayMissions];
+    let allMissions = [...carriedOverMissions, ...todayMissions];
+
+    // If we have a saved session from today, merge those missions (with their progress)
+    if (lastSession) {
+      if (lastSession.date === today) {
+        // Same-day re-login: restore missions with their progress
+        // Get mission IDs from other sources to avoid duplicates
+        const existingMissionIds = new Set(allMissions.map(m => m.id));
+
+        // Add saved missions that aren't already included
+        const savedMissionsToAdd = lastSession.missions.filter(m => !existingMissionIds.has(m.id));
+
+        // Saved missions go first (they have progress), then new ones
+        allMissions = [...savedMissionsToAdd, ...allMissions];
+      }
+      // Clear the saved session (whether from today or an old day)
+      saveToStorage(STORAGE_KEYS.lastSession, null);
+    }
 
     const pendingConfig: DayConfig = {
       date: today,
@@ -478,6 +502,15 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.missionsList, updatedList);
     }
 
+    // Remove the handled mission from dayConfig so it's not saved to lastSession
+    // This prevents duplicates on same-day re-login
+    const updatedDayConfig = {
+      ...dayConfig,
+      missions: dayConfig.missions.filter(m => m.id !== missionId),
+    };
+    setDayConfig(updatedDayConfig);
+    saveToStorage(STORAGE_KEYS.dayConfig, updatedDayConfig);
+
     // Move to next unfinished mission or plan tomorrow
     const nextIndex = logoutFlow.currentIndex + 1;
     if (nextIndex < logoutFlow.unfinishedMissions.length) {
@@ -520,6 +553,21 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       const updatedCompleted = [...completedMissions, ...newCompleted];
       setCompletedMissions(updatedCompleted);
       saveToStorage(STORAGE_KEYS.completedMissions, updatedCompleted);
+
+      // Save session for same-day re-login (preserve incomplete missions with progress)
+      const incompleteMissions = dayConfig.missions.filter(m => !m.completed && !m.isBottleneck);
+      if (incompleteMissions.length > 0) {
+        // Store the session state so it can be resumed if logging back in the same day
+        const sessionToSave = {
+          date: dayConfig.date,
+          missions: incompleteMissions,
+          savedAt: new Date().toISOString(),
+        };
+        saveToStorage(STORAGE_KEYS.lastSession, sessionToSave);
+      } else {
+        // No incomplete missions, clear any previous session
+        saveToStorage(STORAGE_KEYS.lastSession, null);
+      }
     }
 
     // Clear day config
