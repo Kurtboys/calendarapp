@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAI } from '../../context/AIContext';
 import type { GeneratedCheckpoint } from '../../types';
 import { formatDuration } from '../../utils/date';
@@ -18,6 +18,16 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
   } = useAI();
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [showAddDetail, setShowAddDetail] = useState(false);
+  const [customDetailText, setCustomDetailText] = useState('');
+  const [freeformText, setFreeformText] = useState('');
+
+  // Reset state when question changes
+  useEffect(() => {
+    setShowAddDetail(false);
+    setCustomDetailText('');
+    setFreeformText('');
+  }, [currentQuestionIndex]);
 
   if (!breakdownFlow) return null;
 
@@ -38,6 +48,8 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
     const question = breakdownFlow.questions[currentQuestionIndex];
     const answer = breakdownFlow.answers?.find(a => a.questionId === question.id);
     const selectedOptions = answer?.selectedOptions || [];
+    const isFreeformQuestion = question.isFreeform;
+    const isOptional = question.isOptional;
 
     const handleOptionSelect = (optionIndex: number) => {
       let newSelected: number[];
@@ -54,17 +66,51 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
         newSelected = [optionIndex];
       }
 
-      answerQuestion(question.id, newSelected);
+      answerQuestion(question.id, newSelected, customDetailText || undefined);
     };
 
     const handleAllOfAbove = () => {
-      answerQuestion(question.id, [0, 1, 2]);
+      answerQuestion(question.id, [0, 1, 2], customDetailText || undefined);
     };
 
-    const canProceed = selectedOptions.length > 0;
+    const handleAddDetailToggle = () => {
+      setShowAddDetail(!showAddDetail);
+    };
+
+    const handleCustomDetailChange = (text: string) => {
+      setCustomDetailText(text);
+      // Update answer with custom detail
+      answerQuestion(question.id, selectedOptions, text || undefined);
+    };
+
+    const handleFreeformChange = (text: string) => {
+      setFreeformText(text);
+      answerQuestion(question.id, [], undefined, text || undefined);
+    };
+
+    // For regular questions: need at least one option selected (or can skip if optional)
+    // For freeform: optional, so always can proceed
+    const canProceed = isFreeformQuestion || selectedOptions.length > 0 || isOptional;
     const isLastQuestion = currentQuestionIndex === breakdownFlow.questions.length - 1;
 
     const handleNext = () => {
+      // Save the current answer before moving on
+      if (isFreeformQuestion) {
+        answerQuestion(question.id, [], undefined, freeformText || undefined);
+      } else if (showAddDetail && customDetailText) {
+        answerQuestion(question.id, selectedOptions, customDetailText);
+      }
+
+      if (isLastQuestion) {
+        submitAnswersAndGenerate();
+      } else {
+        setCurrentQuestionIndex(prev => prev + 1);
+      }
+    };
+
+    const handleSkip = () => {
+      // Skip optional question
+      answerQuestion(question.id, [], undefined, undefined);
       if (isLastQuestion) {
         submitAnswersAndGenerate();
       } else {
@@ -84,7 +130,7 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
         style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
       >
         <div
-          className="w-full max-w-lg rounded-2xl p-6"
+          className="w-full max-w-lg rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
           style={{
             backgroundColor: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -98,6 +144,7 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
                 Question {currentQuestionIndex + 1} of {breakdownFlow.questions.length}
+                {isOptional && ' (Optional)'}
               </p>
               <h2
                 className="text-lg font-bold mt-1"
@@ -139,61 +186,131 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
             {question.question}
           </p>
 
-          {/* Options */}
-          <div className="space-y-2 mb-6">
-            {question.options.map((option, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleOptionSelect(idx)}
-                className="w-full p-4 rounded-xl text-left transition-all"
-                style={{
-                  backgroundColor: selectedOptions.includes(idx)
-                    ? 'var(--color-accent-light)'
-                    : 'var(--color-background)',
-                  border: selectedOptions.includes(idx)
-                    ? '2px solid var(--color-accent)'
-                    : '1px solid var(--color-border)',
-                }}
+          {/* Freeform question (6th question) */}
+          {isFreeformQuestion ? (
+            <div className="mb-6">
+              <p
+                className="text-sm mb-3"
+                style={{ color: 'var(--color-text-tertiary)' }}
               >
-                <span
-                  className="font-medium"
-                  style={{
-                    color: selectedOptions.includes(idx)
-                      ? 'var(--color-accent)'
-                      : 'var(--color-text-primary)',
-                  }}
-                >
-                  {option}
-                </span>
-              </button>
-            ))}
+                The more context you provide, the more accurate your checkpoints will be. This is optional - skip if you don't have anything to add.
+              </p>
+              <textarea
+                value={freeformText}
+                onChange={(e) => handleFreeformChange(e.target.value)}
+                placeholder="Any additional context, special requirements, or things I should know..."
+                rows={4}
+                className="w-full p-4 rounded-xl resize-none"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Multiple choice options */}
+              <div className="space-y-2 mb-4">
+                {question.options.map((option, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleOptionSelect(idx)}
+                    className="w-full p-4 rounded-xl text-left transition-all"
+                    style={{
+                      backgroundColor: selectedOptions.includes(idx)
+                        ? 'var(--color-accent-light)'
+                        : 'var(--color-background)',
+                      border: selectedOptions.includes(idx)
+                        ? '2px solid var(--color-accent)'
+                        : '1px solid var(--color-border)',
+                    }}
+                  >
+                    <span
+                      className="font-medium"
+                      style={{
+                        color: selectedOptions.includes(idx)
+                          ? 'var(--color-accent)'
+                          : 'var(--color-text-primary)',
+                      }}
+                    >
+                      {option}
+                    </span>
+                  </button>
+                ))}
 
-            {question.allowMultiple && (
-              <button
-                onClick={handleAllOfAbove}
-                className="w-full p-4 rounded-xl text-left transition-all"
-                style={{
-                  backgroundColor: selectedOptions.length === 3
-                    ? 'var(--color-accent-light)'
-                    : 'var(--color-background)',
-                  border: selectedOptions.length === 3
-                    ? '2px solid var(--color-accent)'
-                    : '1px solid var(--color-border)',
-                }}
-              >
-                <span
-                  className="font-medium"
+                {/* All of the above option */}
+                {question.allowMultiple && (
+                  <button
+                    onClick={handleAllOfAbove}
+                    className="w-full p-4 rounded-xl text-left transition-all"
+                    style={{
+                      backgroundColor: selectedOptions.length === 3
+                        ? 'var(--color-accent-light)'
+                        : 'var(--color-background)',
+                      border: selectedOptions.length === 3
+                        ? '2px solid var(--color-accent)'
+                        : '1px solid var(--color-border)',
+                    }}
+                  >
+                    <span
+                      className="font-medium"
+                      style={{
+                        color: selectedOptions.length === 3
+                          ? 'var(--color-accent)'
+                          : 'var(--color-text-primary)',
+                      }}
+                    >
+                      All of the above
+                    </span>
+                  </button>
+                )}
+
+                {/* Add more detail option */}
+                <button
+                  onClick={handleAddDetailToggle}
+                  className="w-full p-4 rounded-xl text-left transition-all"
                   style={{
-                    color: selectedOptions.length === 3
-                      ? 'var(--color-accent)'
-                      : 'var(--color-text-primary)',
+                    backgroundColor: showAddDetail
+                      ? 'var(--color-surface)'
+                      : 'var(--color-background)',
+                    border: showAddDetail
+                      ? '2px solid var(--color-text-tertiary)'
+                      : '1px dashed var(--color-border)',
                   }}
                 >
-                  All of the above
-                </span>
-              </button>
-            )}
-          </div>
+                  <span
+                    className="font-medium flex items-center gap-2"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    I want to add more detail (optional)
+                  </span>
+                </button>
+              </div>
+
+              {/* Custom detail text area */}
+              {showAddDetail && (
+                <div className="mb-4">
+                  <textarea
+                    value={customDetailText}
+                    onChange={(e) => handleCustomDetailChange(e.target.value)}
+                    placeholder="Add any specific details that might help..."
+                    rows={3}
+                    className="w-full p-3 rounded-xl resize-none text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-background)',
+                      color: 'var(--color-text-primary)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                    autoFocus
+                  />
+                </div>
+              )}
+            </>
+          )}
 
           {/* Navigation */}
           <div className="flex gap-3">
@@ -208,6 +325,19 @@ export function MagicBreakdownOverlay({ onAccept, onCancel }: MagicBreakdownOver
                 }}
               >
                 Back
+              </button>
+            )}
+            {isOptional && (
+              <button
+                onClick={handleSkip}
+                className="px-4 py-3 rounded-xl font-medium"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-tertiary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                Skip
               </button>
             )}
             <button

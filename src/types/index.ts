@@ -234,14 +234,18 @@ export const BREAKDOWN_LEVELS: Record<BreakdownLevel, { name: string; descriptio
 export interface ContextQuestion {
   id: string;
   question: string;
-  options: string[]; // 3 options
+  options: string[]; // 3 options (empty array for freeform questions)
   allowMultiple: boolean; // if true, show "All of the above" option
+  isOptional?: boolean; // if true, user can skip this question
+  isFreeform?: boolean; // if true, show a text input instead of options
 }
 
 // User's answers to context questions
 export interface ContextAnswer {
   questionId: string;
   selectedOptions: number[]; // indices of selected options (can be multiple if "all of the above")
+  customDetail?: string; // additional detail the user wants to add (for "add more detail" option)
+  freeformText?: string; // for freeform questions like "anything else"
 }
 
 // Generated checkpoint from AI

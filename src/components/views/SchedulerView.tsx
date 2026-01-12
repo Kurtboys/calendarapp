@@ -520,20 +520,23 @@ export function SchedulerView() {
             >
               Add Mission to {isToday ? 'Today' : `${getMonthName(selectedDate).slice(0, 3)} ${selectedDate.getDate()}`}
             </h3>
-            <div className="flex gap-3 mb-3">
-              <input
-                type="text"
-                value={newMissionTitle}
-                onChange={(e) => setNewMissionTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && newMissionTitle.trim() && setShowAddMissionClassification(true)}
-                placeholder="Mission title..."
-                className="flex-1 px-4 py-3 rounded-lg"
-                style={{
-                  backgroundColor: 'var(--color-background)',
-                  color: 'var(--color-text-primary)',
-                  border: '1px solid var(--color-border)',
-                }}
-              />
+            {/* Mission title input */}
+            <input
+              type="text"
+              value={newMissionTitle}
+              onChange={(e) => setNewMissionTitle(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && newMissionTitle.trim() && setShowAddMissionClassification(true)}
+              placeholder="Mission title..."
+              className="w-full px-4 py-3 rounded-lg mb-3"
+              style={{
+                backgroundColor: 'var(--color-background)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border)',
+              }}
+            />
+
+            {/* Time selection row */}
+            <div className="flex items-center gap-3 mb-3">
               <select
                 value={newMissionDuration}
                 onChange={(e) => setNewMissionDuration(Number(e.target.value))}
@@ -553,37 +556,48 @@ export function SchedulerView() {
                 <option value={180}>3h</option>
                 <option value={240}>4h</option>
               </select>
-              <button
-                onClick={() => newMissionTitle.trim() && setShowAddMissionClassification(!showAddMissionClassification)}
-                disabled={!newMissionTitle.trim()}
-                className="px-4 py-3 rounded-lg font-medium disabled:opacity-50"
-                style={{
-                  backgroundColor: showAddMissionClassification ? 'var(--color-accent-light)' : 'var(--color-background)',
-                  color: showAddMissionClassification ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                  border: '1px solid var(--color-border)',
-                }}
-              >
-                Classify
-              </button>
-              {/* Magic Breakdown button - only show if API key is configured */}
+
+              {/* AI Time Generation button - only show if API key is configured */}
               {aiSettings.apiKey && (
-                <button
-                  onClick={handleStartBreakdown}
-                  disabled={!newMissionTitle.trim()}
-                  className="px-4 py-3 rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-                  style={{
-                    backgroundColor: 'var(--color-accent)',
-                    color: 'white',
-                  }}
-                  title="Use AI to break down this task"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Magic
-                </button>
+                <>
+                  <span
+                    className="text-sm font-medium"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    or
+                  </span>
+                  <button
+                    onClick={handleStartBreakdown}
+                    disabled={!newMissionTitle.trim()}
+                    className="px-4 py-3 rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+                    style={{
+                      backgroundColor: 'var(--color-accent)',
+                      color: 'white',
+                    }}
+                    title="Use AI to break down this task and estimate time"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Use AI To Generate Time Constraints
+                  </button>
+                </>
               )}
             </div>
+
+            {/* Classify button */}
+            <button
+              onClick={() => newMissionTitle.trim() && setShowAddMissionClassification(!showAddMissionClassification)}
+              disabled={!newMissionTitle.trim()}
+              className="w-full px-4 py-3 rounded-lg font-medium disabled:opacity-50 mb-3"
+              style={{
+                backgroundColor: showAddMissionClassification ? 'var(--color-accent-light)' : 'var(--color-background)',
+                color: showAddMissionClassification ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              Classify Mental Effort & Minimum Session Time
+            </button>
 
             {/* Classification section */}
             {showAddMissionClassification && newMissionTitle.trim() && (

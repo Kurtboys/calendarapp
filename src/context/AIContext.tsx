@@ -37,7 +37,7 @@ interface AIContextType {
   // Breakdown flow
   breakdownFlow: BreakdownFlowState | null;
   startBreakdown: (taskTitle: string, level: BreakdownLevel) => Promise<void>;
-  answerQuestion: (questionId: string, selectedOptions: number[]) => void;
+  answerQuestion: (questionId: string, selectedOptions: number[], customDetail?: string, freeformText?: string) => void;
   submitAnswersAndGenerate: () => Promise<void>;
   cancelBreakdown: () => void;
   acceptBreakdown: () => BreakdownResponse | null;
@@ -204,13 +204,20 @@ export function AIProvider({ children }: { children: ReactNode }) {
     }
   }, [aiSettings.apiKey]);
 
-  // Answer a question
-  const answerQuestion = useCallback((questionId: string, selectedOptions: number[]) => {
+  // Answer a question (supports customDetail and freeformText)
+  const answerQuestion = useCallback((
+    questionId: string,
+    selectedOptions: number[],
+    customDetail?: string,
+    freeformText?: string
+  ) => {
     setBreakdownFlow(prev => {
       if (!prev || !prev.answers) return prev;
 
       const updatedAnswers = prev.answers.map(a =>
-        a.questionId === questionId ? { ...a, selectedOptions } : a
+        a.questionId === questionId
+          ? { ...a, selectedOptions, customDetail, freeformText }
+          : a
       );
 
       return { ...prev, answers: updatedAnswers };

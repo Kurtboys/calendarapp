@@ -57,11 +57,13 @@ export async function generateContextQuestions(
   apiKey: string,
   taskTitle: string
 ): Promise<ContextQuestion[]> {
-  const prompt = `You are helping someone with ADHD break down a task. Given this task title, generate exactly 5 yes/no style context questions to understand what work has already been done and what the person needs.
+  const prompt = `You are helping someone with ADHD break down a task. Given this task title, generate exactly 5 context questions to understand what work has already been done and what the person needs.
 
 Task: "${taskTitle}"
 
-For each question, provide 3 specific options that help clarify the task state. The questions should help determine:
+For each question, provide exactly 3 specific options that help clarify the task state, PLUS the question should allow for an optional "I want to add more detail" choice (handled separately in the UI).
+
+The questions should help determine:
 1. What progress has been made
 2. What resources/materials are available
 3. What the scope or complexity is
@@ -89,7 +91,21 @@ Respond ONLY with the JSON array, no other text.`;
     if (!jsonMatch) throw new Error('No JSON array found in response');
 
     const questions = JSON.parse(jsonMatch[0]) as ContextQuestion[];
-    return questions.slice(0, 5); // Ensure max 5 questions
+
+    // Add the 6th "anything else" question
+    const questionsWithAnythingElse = [
+      ...questions.slice(0, 5),
+      {
+        id: 'q6',
+        question: "Anything else you'd like me to know?",
+        options: [],
+        allowMultiple: false,
+        isOptional: true,
+        isFreeform: true,
+      },
+    ];
+
+    return questionsWithAnythingElse;
   } catch (e) {
     console.error('Failed to parse context questions:', e);
     // Return fallback generic questions
@@ -130,6 +146,14 @@ function getGenericContextQuestions(): ContextQuestion[] {
       options: ['Very clear', 'Somewhat clear', 'Still figuring it out'],
       allowMultiple: false,
     },
+    {
+      id: 'q6',
+      question: "Anything else you'd like me to know?",
+      options: [],
+      allowMultiple: false,
+      isOptional: true,
+      isFreeform: true,
+    },
   ];
 }
 
@@ -139,8 +163,21 @@ function buildContextFromAnswers(questions: ContextQuestion[], answers: ContextA
     const question = questions.find(q => q.id === answer.questionId);
     if (!question) return '';
 
+    // Handle freeform questions
+    if (question.isFreeform && answer.freeformText) {
+      return `${question.question} ${answer.freeformText}`;
+    }
+
+    // Handle regular questions
     const selectedTexts = answer.selectedOptions.map(idx => question.options[idx] || 'Unknown');
-    return `${question.question} ${selectedTexts.join(', ')}`;
+    let result = `${question.question} ${selectedTexts.join(', ')}`;
+
+    // Add custom detail if provided
+    if (answer.customDetail) {
+      result += ` (Additional detail: ${answer.customDetail})`;
+    }
+
+    return result;
   }).filter(Boolean).join('\n');
 }
 
