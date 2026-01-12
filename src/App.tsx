@@ -5,6 +5,7 @@ import { DayStartProvider, useDayStart } from './context/DayStartContext';
 import { Header } from './components/Header';
 import { StartDayOverlay } from './components/StartDayOverlay';
 import { TodayView, MultiDayView, MonthView, YearView } from './components/views';
+import { BottleneckView } from './components/views/BottleneckView';
 import type { ViewType } from './types';
 import { addDays, startOfWeek, getEffectiveDate } from './utils/date';
 import './index.css';
@@ -74,6 +75,8 @@ function CalendarApp() {
         return <MonthView date={currentDate} />;
       case 'year':
         return <YearView year={currentDate.getFullYear()} />;
+      case 'bottleneck':
+        return <BottleneckView />;
       default:
         return <TodayView date={currentDate} />;
     }

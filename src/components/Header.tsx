@@ -1,4 +1,5 @@
 import { useTheme } from '../context/ThemeContext';
+import { useDayStart } from '../context/DayStartContext';
 import type { ViewType } from '../types';
 
 interface HeaderProps {
@@ -8,7 +9,7 @@ interface HeaderProps {
   onNavigate: (direction: 'prev' | 'next' | 'today') => void;
 }
 
-const viewLabels: Record<ViewType, string> = {
+const viewLabels: Record<Exclude<ViewType, 'bottleneck'>, string> = {
   today: 'Today',
   '3day': '3 Day',
   '5day': '5 Day',
@@ -19,6 +20,7 @@ const viewLabels: Record<ViewType, string> = {
 
 export function Header({ currentView, onViewChange, currentDate, onNavigate }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
+  const { bottleneckedMissions } = useDayStart();
 
   const getDateLabel = () => {
     if (currentView === 'year') {
@@ -93,7 +95,7 @@ export function Header({ currentView, onViewChange, currentDate, onNavigate }: H
         className="flex items-center gap-1 p-1 rounded-lg"
         style={{ backgroundColor: 'var(--color-surface)' }}
       >
-        {(Object.keys(viewLabels) as ViewType[]).map((view) => (
+        {(Object.keys(viewLabels) as Exclude<ViewType, 'bottleneck'>[]).map((view) => (
           <button
             key={view}
             onClick={() => onViewChange(view)}
@@ -107,6 +109,34 @@ export function Header({ currentView, onViewChange, currentDate, onNavigate }: H
             {viewLabels[view]}
           </button>
         ))}
+        {/* Bottleneck button with count badge */}
+        <button
+          onClick={() => onViewChange('bottleneck')}
+          className="relative px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+          style={{
+            backgroundColor: currentView === 'bottleneck' ? 'var(--color-background)' : 'transparent',
+            color: currentView === 'bottleneck' ? 'var(--color-priority-high)' : 'var(--color-text-secondary)',
+            boxShadow: currentView === 'bottleneck' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+          }}
+        >
+          <span className="flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Bottlenecks
+          </span>
+          {bottleneckedMissions.length > 0 && (
+            <span
+              className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center"
+              style={{
+                backgroundColor: 'var(--color-priority-urgent)',
+                color: 'white',
+              }}
+            >
+              {bottleneckedMissions.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Right section - Theme toggle */}
