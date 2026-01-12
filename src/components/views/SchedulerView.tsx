@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
-import type { MissionCategory, MissionListItem } from '../../types';
+import type { MissionCategory, MissionListItem, CognitiveLevel, MinimumViableSession } from '../../types';
+import { COGNITIVE_LEVELS, MVS_OPTIONS } from '../../types';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName, formatDate, getMonthGrid } from '../../utils/date';
 
 const CATEGORY_LABELS: Record<MissionCategory, string> = {
@@ -38,6 +39,9 @@ export function SchedulerView() {
   const [calendarMonth, setCalendarMonth] = useState(() => getEffectiveDate());
   const [newMissionTitle, setNewMissionTitle] = useState('');
   const [newMissionDuration, setNewMissionDuration] = useState(30);
+  const [newMissionCognitive, setNewMissionCognitive] = useState<CognitiveLevel>(3);
+  const [newMissionMVS, setNewMissionMVS] = useState<MinimumViableSession>(30);
+  const [showAddMissionClassification, setShowAddMissionClassification] = useState(false);
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
   const [expandedListItemId, setExpandedListItemId] = useState<string | null>(null);
 
@@ -46,6 +50,8 @@ export function SchedulerView() {
   const [newListMissionTitle, setNewListMissionTitle] = useState('');
   const [newListMissionDuration, setNewListMissionDuration] = useState(30);
   const [newListMissionCategory, setNewListMissionCategory] = useState<MissionCategory | ''>('');
+  const [newListMissionCognitive, setNewListMissionCognitive] = useState<CognitiveLevel>(3);
+  const [newListMissionMVS, setNewListMissionMVS] = useState<MinimumViableSession>(30);
 
   const effectiveDate = getEffectiveDate();
   const selectedDateStr = formatDate(selectedDate);
@@ -69,29 +75,28 @@ export function SchedulerView() {
 
   const handleAddMissionToDay = useCallback(() => {
     if (!newMissionTitle.trim()) return;
-    addMissionToDay(selectedDateStr, newMissionTitle.trim(), newMissionDuration);
+    addMissionToDay(selectedDateStr, newMissionTitle.trim(), newMissionDuration, newMissionCognitive, newMissionMVS);
     setNewMissionTitle('');
     setNewMissionDuration(30);
-  }, [newMissionTitle, newMissionDuration, addMissionToDay, selectedDateStr]);
+    setNewMissionCognitive(3);
+    setNewMissionMVS(30);
+    setShowAddMissionClassification(false);
+  }, [newMissionTitle, newMissionDuration, newMissionCognitive, newMissionMVS, addMissionToDay, selectedDateStr]);
 
   const handleAddToMissionsList = useCallback(() => {
     if (!newListMissionTitle.trim() || !newListMissionCategory) return;
-    addToMissionsList(newListMissionTitle.trim(), newListMissionDuration, newListMissionCategory);
+    addToMissionsList(newListMissionTitle.trim(), newListMissionDuration, newListMissionCategory, newListMissionCognitive, newListMissionMVS);
     setNewListMissionTitle('');
     setNewListMissionDuration(30);
     setNewListMissionCategory('');
+    setNewListMissionCognitive(3);
+    setNewListMissionMVS(30);
     setShowAddToList(false);
-  }, [newListMissionTitle, newListMissionDuration, newListMissionCategory, addToMissionsList]);
+  }, [newListMissionTitle, newListMissionDuration, newListMissionCategory, newListMissionCognitive, newListMissionMVS, addToMissionsList]);
 
   const handleScheduleFromList = useCallback((listItemId: string) => {
     scheduleMissionFromList(listItemId, selectedDateStr);
   }, [scheduleMissionFromList, selectedDateStr]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleAddMissionToDay();
-    }
-  };
 
   // Get available mission numbers (1-15 minus already assigned)
   const getAvailableMissionNumbers = (currentMissionId?: string) => {
@@ -277,22 +282,75 @@ export function SchedulerView() {
                   <option value={120}>2h</option>
                 </select>
               </div>
-              <div className="space-y-1 mb-2">
-                {(Object.keys(CATEGORY_LABELS) as MissionCategory[]).map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setNewListMissionCategory(cat)}
-                    className="w-full px-2 py-1.5 rounded text-left text-xs transition-colors"
-                    style={{
-                      backgroundColor: newListMissionCategory === cat ? 'var(--color-accent-light)' : 'transparent',
-                      color: newListMissionCategory === cat ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                      border: newListMissionCategory === cat ? '1px solid var(--color-accent)' : '1px solid transparent',
-                    }}
-                  >
-                    {CATEGORY_LABELS[cat]}
-                  </button>
-                ))}
+
+              {/* Cognitive Level */}
+              <div className="mb-2">
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Mental Effort Required
+                </p>
+                <div className="space-y-1">
+                  {([5, 4, 3, 2, 1] as CognitiveLevel[]).map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => setNewListMissionCognitive(level)}
+                      className="w-full px-2 py-1.5 rounded text-left text-xs transition-colors"
+                      style={{
+                        backgroundColor: newListMissionCognitive === level ? 'var(--color-accent-light)' : 'transparent',
+                        color: newListMissionCognitive === level ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                        border: newListMissionCognitive === level ? '1px solid var(--color-accent)' : '1px solid transparent',
+                      }}
+                    >
+                      <span className="font-medium">{COGNITIVE_LEVELS[level].label}</span>
+                      <span className="block text-[10px] opacity-70">{COGNITIVE_LEVELS[level].feeling}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Minimum Session */}
+              <div className="mb-2">
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Min Time to Make Progress
+                </p>
+                <select
+                  value={newListMissionMVS}
+                  onChange={(e) => setNewListMissionMVS(Number(e.target.value) as MinimumViableSession)}
+                  className="w-full px-2 py-2 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  {MVS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category */}
+              <div className="mb-2">
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Priority
+                </p>
+                <div className="space-y-1">
+                  {(Object.keys(CATEGORY_LABELS) as MissionCategory[]).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setNewListMissionCategory(cat)}
+                      className="w-full px-2 py-1.5 rounded text-left text-xs transition-colors"
+                      style={{
+                        backgroundColor: newListMissionCategory === cat ? 'var(--color-accent-light)' : 'transparent',
+                        color: newListMissionCategory === cat ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                        border: newListMissionCategory === cat ? '1px solid var(--color-accent)' : '1px solid transparent',
+                      }}
+                    >
+                      {CATEGORY_LABELS[cat]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 onClick={handleAddToMissionsList}
                 disabled={!newListMissionTitle.trim() || !newListMissionCategory}
@@ -388,12 +446,12 @@ export function SchedulerView() {
             >
               Add Mission to {isToday ? 'Today' : `${getMonthName(selectedDate).slice(0, 3)} ${selectedDate.getDate()}`}
             </h3>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mb-3">
               <input
                 type="text"
                 value={newMissionTitle}
                 onChange={(e) => setNewMissionTitle(e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => e.key === 'Enter' && newMissionTitle.trim() && setShowAddMissionClassification(true)}
                 placeholder="Mission title..."
                 className="flex-1 px-4 py-3 rounded-lg"
                 style={{
@@ -422,17 +480,99 @@ export function SchedulerView() {
                 <option value={240}>4h</option>
               </select>
               <button
-                onClick={handleAddMissionToDay}
+                onClick={() => newMissionTitle.trim() && setShowAddMissionClassification(!showAddMissionClassification)}
                 disabled={!newMissionTitle.trim()}
-                className="px-6 py-3 rounded-lg font-medium disabled:opacity-50"
+                className="px-4 py-3 rounded-lg font-medium disabled:opacity-50"
                 style={{
-                  backgroundColor: 'var(--color-accent)',
-                  color: 'white',
+                  backgroundColor: showAddMissionClassification ? 'var(--color-accent-light)' : 'var(--color-background)',
+                  color: showAddMissionClassification ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border)',
                 }}
               >
-                Add Mission
+                Classify
               </button>
             </div>
+
+            {/* Classification section */}
+            {showAddMissionClassification && newMissionTitle.trim() && (
+              <div
+                className="p-4 rounded-lg mb-3"
+                style={{ backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)' }}
+              >
+                {/* Cognitive Level */}
+                <div className="mb-4">
+                  <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    How much mental effort does this require?
+                  </p>
+                  <div className="grid gap-2">
+                    {([5, 4, 3, 2, 1] as CognitiveLevel[]).map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => setNewMissionCognitive(level)}
+                        className="w-full p-3 rounded-lg text-left transition-colors"
+                        style={{
+                          backgroundColor: newMissionCognitive === level ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                          border: newMissionCognitive === level ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                        }}
+                      >
+                        <span
+                          className="font-semibold text-sm"
+                          style={{ color: newMissionCognitive === level ? 'var(--color-accent)' : 'var(--color-text-primary)' }}
+                        >
+                          {COGNITIVE_LEVELS[level].label}
+                        </span>
+                        <span
+                          className="block text-xs mt-0.5"
+                          style={{ color: 'var(--color-text-tertiary)' }}
+                        >
+                          {COGNITIVE_LEVELS[level].feeling}
+                        </span>
+                        <span
+                          className="block text-xs mt-1 italic"
+                          style={{ color: 'var(--color-text-tertiary)' }}
+                        >
+                          e.g., {COGNITIVE_LEVELS[level].examples[0]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Minimum Session */}
+                <div className="mb-4">
+                  <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Minimum time needed to make progress
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {MVS_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setNewMissionMVS(opt.value)}
+                        className="p-2 rounded-lg text-center transition-colors"
+                        style={{
+                          backgroundColor: newMissionMVS === opt.value ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                          border: newMissionMVS === opt.value ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                          color: newMissionMVS === opt.value ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                        }}
+                      >
+                        <span className="text-sm font-medium">{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleAddMissionToDay}
+                  className="w-full px-6 py-3 rounded-lg font-medium"
+                  style={{
+                    backgroundColor: 'var(--color-accent)',
+                    color: 'white',
+                  }}
+                >
+                  Add Mission
+                </button>
+              </div>
+            )}
           </div>
         )}
 

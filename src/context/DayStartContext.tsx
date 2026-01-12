@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { DayConfig, Mission, Checkpoint, MissionListItem, MissionCategory, CompletedMission, UserSettings, ScheduledDay } from '../types';
+import type { DayConfig, Mission, Checkpoint, MissionListItem, MissionCategory, CompletedMission, UserSettings, ScheduledDay, CognitiveLevel, MinimumViableSession, EnergyState, MissionRecommendation } from '../types';
+import { COGNITIVE_LEVELS } from '../types';
 import { formatDate, addDays, getCurrentHour } from '../utils/date';
 
-type AppStep = 'home' | 'logged-in' | 'logout-flow';
+type AppStep = 'home' | 'energy-selection' | 'recommendations' | 'logged-in' | 'logout-flow';
 
 interface ActiveMissionState {
   missionId: string;
@@ -18,12 +19,20 @@ interface LogoutFlowState {
   currentIndex: number;
 }
 
+interface LoginFlowState {
+  step: 'energy-selection' | 'recommendations';
+  energyState?: EnergyState;
+  recommendations?: MissionRecommendation[];
+  pendingDayConfig?: DayConfig;
+}
+
 interface DayStartContextType {
   // App state
   appStep: AppStep;
   dayConfig: DayConfig | null;
   activeMission: ActiveMissionState | null;
   logoutFlow: LogoutFlowState | null;
+  loginFlow: LoginFlowState | null;
 
   // Missions list (unscheduled missions by category)
   missionsList: MissionListItem[];
@@ -40,8 +49,11 @@ interface DayStartContextType {
   // User settings
   userSettings: UserSettings;
 
-  // Login/Logout
-  loginForDay: () => void;
+  // Login/Logout flow
+  startLoginFlow: () => void;
+  selectEnergyState: (energy: EnergyState) => void;
+  applyRecommendations: () => void;
+  skipRecommendations: () => void;
   startLogout: () => void;
   handleUnfinishedMission: (missionId: string, action: 'tomorrow' | 'missions-list', category?: MissionCategory) => void;
   skipPlanTomorrow: () => void;
@@ -49,20 +61,20 @@ interface DayStartContextType {
   getTomorrowDate: () => string;
 
   // Mission management (for today)
-  addMission: (title: string, duration: number) => void;
+  addMission: (title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => void;
   updateMission: (id: string, updates: Partial<Mission>) => void;
   deleteMission: (id: string) => void;
   assignMissionNumber: (missionId: string, number: number | undefined) => void;
 
   // Missions list management
-  addToMissionsList: (title: string, duration: number, category: MissionCategory) => void;
+  addToMissionsList: (title: string, duration: number, category: MissionCategory, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => void;
   updateMissionListItem: (id: string, updates: Partial<MissionListItem>) => void;
   deleteMissionListItem: (id: string) => void;
   moveMissionListItemToCategory: (id: string, category: MissionCategory) => void;
   scheduleMissionFromList: (listItemId: string, date: string) => void;
 
   // Scheduled days management
-  addMissionToDay: (date: string, title: string, duration: number) => void;
+  addMissionToDay: (date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => void;
   getMissionsForDay: (date: string) => Mission[];
   moveMissionToDay: (missionId: string, fromDate: string, toDate: string) => void;
 
@@ -145,10 +157,14 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   const [userSettings, setUserSettings] = useState<UserSettings>(() => loadFromStorage(STORAGE_KEYS.userSettings, DEFAULT_SETTINGS));
   const [carriedOverMissions, setCarriedOverMissions] = useState<Mission[]>(() => loadFromStorage(STORAGE_KEYS.carriedOverMissions, []));
   const [logoutFlow, setLogoutFlow] = useState<LogoutFlowState | null>(null);
+  const [loginFlow, setLoginFlow] = useState<LoginFlowState | null>(null);
 
   // Determine app step
   const getAppStep = (): AppStep => {
     if (logoutFlow) return 'logout-flow';
+    if (loginFlow) {
+      return loginFlow.step === 'energy-selection' ? 'energy-selection' : 'recommendations';
+    }
     if (dayConfig) return 'logged-in';
     return 'home';
   };
@@ -158,7 +174,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   // Update app step when dependencies change
   useEffect(() => {
     setAppStep(getAppStep());
-  }, [dayConfig, logoutFlow]);
+  }, [dayConfig, logoutFlow, loginFlow]);
 
   // Get tomorrow based on login day (not clock)
   const getTomorrowDate = useCallback((): string => {
@@ -171,8 +187,99 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     return formatDate(addDays(new Date(), 1));
   }, [dayConfig]);
 
-  // Login for the day
-  const loginForDay = useCallback(() => {
+  // Generate recommendations based on energy state
+  const generateRecommendations = useCallback((missions: Mission[], energyState: EnergyState): MissionRecommendation[] => {
+    const incompleteMissions = missions.filter(m => !m.completed && !m.isBottleneck);
+    if (incompleteMissions.length === 0) return [];
+
+    let sortedMissions: Mission[];
+    let reasons: Map<string, string> = new Map();
+
+    switch (energyState) {
+      case 'low':
+        // State 1: Filter by MVS < 30min, sort by cognitiveLevel ASC (build momentum)
+        sortedMissions = [...incompleteMissions]
+          .filter(m => m.minimumViableSession <= 30)
+          .sort((a, b) => a.cognitiveLevel - b.cognitiveLevel);
+
+        // Add back longer tasks at the end
+        const longerTasks = incompleteMissions.filter(m => m.minimumViableSession > 30)
+          .sort((a, b) => a.cognitiveLevel - b.cognitiveLevel);
+        sortedMissions = [...sortedMissions, ...longerTasks];
+
+        sortedMissions.forEach((m, i) => {
+          if (i === 0) {
+            reasons.set(m.id, `Start here to build momentum - ${COGNITIVE_LEVELS[m.cognitiveLevel].label} task`);
+          } else if (m.minimumViableSession <= 30) {
+            reasons.set(m.id, `Quick win - only ${m.minimumViableSession} min, ${COGNITIVE_LEVELS[m.cognitiveLevel].label}`);
+          } else {
+            reasons.set(m.id, `Tackle later when you have energy built up`);
+          }
+        });
+        break;
+
+      case 'normal':
+        // State 2: Mix - start with a moderately hard task, then alternate
+        sortedMissions = [...incompleteMissions].sort((a, b) => {
+          // Prefer level 3-4 tasks first, then easier, then hardest
+          const priorityOrder = (level: number) => {
+            if (level === 4) return 0;
+            if (level === 3) return 1;
+            if (level === 2) return 2;
+            if (level === 5) return 3;
+            return 4;
+          };
+          return priorityOrder(a.cognitiveLevel) - priorityOrder(b.cognitiveLevel);
+        });
+
+        sortedMissions.forEach((m, i) => {
+          if (i === 0) {
+            reasons.set(m.id, `Good starting point - ${COGNITIVE_LEVELS[m.cognitiveLevel].label}`);
+          } else if (m.cognitiveLevel >= 4) {
+            reasons.set(m.id, `Higher focus task - tackle when you hit your stride`);
+          } else {
+            reasons.set(m.id, `Balanced placement - ${COGNITIVE_LEVELS[m.cognitiveLevel].label}`);
+          }
+        });
+        break;
+
+      case 'high':
+        // State 3: Hard first, respect MVS, breaks implied after 60-90min blocks
+        sortedMissions = [...incompleteMissions].sort((a, b) => {
+          // Sort by cognitive level DESC, then by MVS DESC
+          if (b.cognitiveLevel !== a.cognitiveLevel) {
+            return b.cognitiveLevel - a.cognitiveLevel;
+          }
+          return b.minimumViableSession - a.minimumViableSession;
+        });
+
+        sortedMissions.forEach((m, i) => {
+          if (i === 0) {
+            reasons.set(m.id, `Tackle your hardest work first while energy is peak - ${COGNITIVE_LEVELS[m.cognitiveLevel].label}`);
+          } else if (m.cognitiveLevel >= 4) {
+            reasons.set(m.id, `High-stakes task - capitalize on your focus`);
+          } else {
+            reasons.set(m.id, `Lighter task for later - ${COGNITIVE_LEVELS[m.cognitiveLevel].label}`);
+          }
+        });
+        break;
+    }
+
+    // Create recommendations with original vs recommended order
+    return sortedMissions.map((mission, newIndex) => {
+      const originalIndex = incompleteMissions.findIndex(m => m.id === mission.id);
+      return {
+        missionId: mission.id,
+        mission,
+        originalOrder: originalIndex,
+        recommendedOrder: newIndex,
+        reason: reasons.get(mission.id) || '',
+      };
+    });
+  }, []);
+
+  // Start login flow - shows energy selection
+  const startLoginFlow = useCallback(() => {
     const today = formatDate(new Date());
     const startTime = getCurrentHour();
 
@@ -183,7 +290,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     // Include carried over missions
     const allMissions = [...carriedOverMissions, ...todayMissions];
 
-    const newConfig: DayConfig = {
+    const pendingConfig: DayConfig = {
       date: today,
       startTime,
       endTime: userSettings.defaultEndTime,
@@ -191,20 +298,110 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       startedAt: new Date().toISOString(),
     };
 
-    setDayConfig(newConfig);
-    saveToStorage(STORAGE_KEYS.dayConfig, newConfig);
+    setLoginFlow({
+      step: 'energy-selection',
+      pendingDayConfig: pendingConfig,
+    });
+  }, [scheduledDays, carriedOverMissions, userSettings.defaultEndTime]);
 
-    // Clear carried over since they're now in today
+  // Select energy state and generate recommendations
+  const selectEnergyState = useCallback((energy: EnergyState) => {
+    if (!loginFlow?.pendingDayConfig) return;
+
+    const recommendations = generateRecommendations(
+      loginFlow.pendingDayConfig.missions,
+      energy
+    );
+
+    // If no missions or no recommendations, skip to login
+    if (recommendations.length === 0) {
+      // Complete login directly
+      const today = loginFlow.pendingDayConfig.date;
+      const scheduledForToday = scheduledDays.find(sd => sd.date === today);
+
+      setDayConfig(loginFlow.pendingDayConfig);
+      saveToStorage(STORAGE_KEYS.dayConfig, loginFlow.pendingDayConfig);
+
+      setCarriedOverMissions([]);
+      saveToStorage(STORAGE_KEYS.carriedOverMissions, []);
+
+      if (scheduledForToday) {
+        const updated = scheduledDays.filter(sd => sd.date !== today);
+        setScheduledDays(updated);
+        saveToStorage(STORAGE_KEYS.scheduledDays, updated);
+      }
+
+      setLoginFlow(null);
+      return;
+    }
+
+    setLoginFlow({
+      ...loginFlow,
+      step: 'recommendations',
+      energyState: energy,
+      recommendations,
+    });
+  }, [loginFlow, scheduledDays, generateRecommendations]);
+
+  // Apply recommendations and complete login
+  const applyRecommendations = useCallback(() => {
+    if (!loginFlow?.pendingDayConfig || !loginFlow.recommendations) return;
+
+    // Reorder missions according to recommendations
+    const reorderedMissions = loginFlow.recommendations.map((rec, index) => ({
+      ...rec.mission,
+      order: index,
+    }));
+
+    // Keep completed and bottleneck missions as they are
+    const otherMissions = loginFlow.pendingDayConfig.missions.filter(
+      m => m.completed || m.isBottleneck
+    );
+
+    const finalConfig: DayConfig = {
+      ...loginFlow.pendingDayConfig,
+      missions: [...reorderedMissions, ...otherMissions],
+    };
+
+    const today = finalConfig.date;
+    const scheduledForToday = scheduledDays.find(sd => sd.date === today);
+
+    setDayConfig(finalConfig);
+    saveToStorage(STORAGE_KEYS.dayConfig, finalConfig);
+
     setCarriedOverMissions([]);
     saveToStorage(STORAGE_KEYS.carriedOverMissions, []);
 
-    // Remove today from scheduled days
     if (scheduledForToday) {
       const updated = scheduledDays.filter(sd => sd.date !== today);
       setScheduledDays(updated);
       saveToStorage(STORAGE_KEYS.scheduledDays, updated);
     }
-  }, [scheduledDays, carriedOverMissions, userSettings.defaultEndTime]);
+
+    setLoginFlow(null);
+  }, [loginFlow, scheduledDays]);
+
+  // Skip recommendations and use original order
+  const skipRecommendations = useCallback(() => {
+    if (!loginFlow?.pendingDayConfig) return;
+
+    const today = loginFlow.pendingDayConfig.date;
+    const scheduledForToday = scheduledDays.find(sd => sd.date === today);
+
+    setDayConfig(loginFlow.pendingDayConfig);
+    saveToStorage(STORAGE_KEYS.dayConfig, loginFlow.pendingDayConfig);
+
+    setCarriedOverMissions([]);
+    saveToStorage(STORAGE_KEYS.carriedOverMissions, []);
+
+    if (scheduledForToday) {
+      const updated = scheduledDays.filter(sd => sd.date !== today);
+      setScheduledDays(updated);
+      saveToStorage(STORAGE_KEYS.scheduledDays, updated);
+    }
+
+    setLoginFlow(null);
+  }, [loginFlow, scheduledDays]);
 
   // Start logout flow
   const startLogout = useCallback(() => {
@@ -272,6 +469,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         category,
         createdAt: new Date().toISOString(),
         order: missionsList.filter(m => m.category === category).length,
+        cognitiveLevel: mission.cognitiveLevel,
+        minimumViableSession: mission.minimumViableSession,
       };
 
       const updatedList = [...missionsList, newListItem];
@@ -304,7 +503,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   const finishLogout = useCallback(() => {
     // Save completed missions to history
     if (dayConfig) {
-      const newCompleted = dayConfig.missions
+      const newCompleted: CompletedMission[] = dayConfig.missions
         .filter(m => m.completed)
         .map(m => ({
           id: m.id,
@@ -314,6 +513,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
           checkpoints: m.checkpoints,
           completedAt: m.completedAt || new Date().toISOString(),
           completedDate: dayConfig.date,
+          cognitiveLevel: m.cognitiveLevel,
+          minimumViableSession: m.minimumViableSession,
         }));
 
       const updatedCompleted = [...completedMissions, ...newCompleted];
@@ -334,7 +535,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [dayConfig, completedMissions]);
 
   // Mission management for today
-  const addMission = useCallback((title: string, duration: number) => {
+  const addMission = useCallback((title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => {
     if (!dayConfig) return;
 
     const newMission: Mission = {
@@ -345,6 +546,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       completed: false,
       checkpoints: [],
       currentCheckpointIndex: 0,
+      cognitiveLevel,
+      minimumViableSession,
     };
 
     const updated = {
@@ -402,7 +605,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [dayConfig]);
 
   // Missions list management
-  const addToMissionsList = useCallback((title: string, duration: number, category: MissionCategory) => {
+  const addToMissionsList = useCallback((title: string, duration: number, category: MissionCategory, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => {
     const newItem: MissionListItem = {
       id: crypto.randomUUID(),
       title,
@@ -411,6 +614,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       category,
       createdAt: new Date().toISOString(),
       order: missionsList.filter(m => m.category === category).length,
+      cognitiveLevel,
+      minimumViableSession,
     };
 
     const updated = [...missionsList, newItem];
@@ -455,6 +660,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         completed: false,
       })),
       currentCheckpointIndex: 0,
+      cognitiveLevel: listItem.cognitiveLevel,
+      minimumViableSession: listItem.minimumViableSession,
     };
 
     // Add to scheduled day or today
@@ -490,7 +697,7 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [missionsList, dayConfig, scheduledDays]);
 
   // Scheduled days management
-  const addMissionToDay = useCallback((date: string, title: string, duration: number) => {
+  const addMissionToDay = useCallback((date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => {
     const newMission: Mission = {
       id: crypto.randomUUID(),
       title,
@@ -500,6 +707,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       checkpoints: [],
       currentCheckpointIndex: 0,
       scheduledDate: date,
+      cognitiveLevel,
+      minimumViableSession,
     };
 
     const today = dayConfig?.date;
@@ -807,6 +1016,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         checkpoints: [],
         currentCheckpointIndex: 0,
         parentMissionId: currentMission.id,
+        cognitiveLevel: 3, // Default to routine work for fix tasks
+        minimumViableSession: 30,
       };
 
       const updatedMissions = dayConfig.missions
@@ -842,6 +1053,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
         checkpoints: [],
         currentCheckpointIndex: 0,
         parentMissionId: currentMission.id,
+        cognitiveLevel: 2, // Light work for address tasks
+        minimumViableSession: 30,
       };
 
       const updated = {
@@ -932,12 +1145,16 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       dayConfig,
       activeMission,
       logoutFlow,
+      loginFlow,
       missionsList,
       scheduledDays,
       completedMissions,
       bottleneckedMissions,
       userSettings,
-      loginForDay,
+      startLoginFlow,
+      selectEnergyState,
+      applyRecommendations,
+      skipRecommendations,
       startLogout,
       handleUnfinishedMission,
       skipPlanTomorrow,

@@ -4,6 +4,93 @@ export type ViewType = 'today' | '3day' | 'bottleneck' | 'scheduler' | 'dynamic'
 
 export type MissionCategory = 'need-to-do-soon' | 'can-wait' | 'sometime-future';
 
+// Cognitive Level (1-5) - how much brain power a task requires
+export type CognitiveLevel = 1 | 2 | 3 | 4 | 5;
+
+// Minimum viable session time in minutes
+export type MinimumViableSession = 15 | 30 | 45 | 60 | 90 | 120;
+
+// Energy state for daily login
+export type EnergyState = 'low' | 'normal' | 'high';
+
+// Cognitive level definitions with feeling-based descriptions and examples
+export const COGNITIVE_LEVELS: Record<CognitiveLevel, { label: string; feeling: string; examples: string[] }> = {
+  5: {
+    label: 'Deep Focus',
+    feeling: 'Requires intense concentration - you need to be at your sharpest',
+    examples: [
+      'Design a new product strategy from scratch',
+      'Write complex code for a new feature',
+      'Solve a problem you\'ve never faced before',
+    ],
+  },
+  4: {
+    label: 'Hard But Familiar',
+    feeling: 'Challenging but you know how to do it - needs solid focus',
+    examples: [
+      'Write a client proposal using a template',
+      'Debug a tricky but familiar issue',
+      'Create a presentation on a topic you know',
+    ],
+  },
+  3: {
+    label: 'Routine Work',
+    feeling: 'Standard work mode - you can do this on autopilot',
+    examples: [
+      'Update weekly metrics spreadsheet',
+      'Review and approve documents',
+      'Follow a checklist or procedure',
+    ],
+  },
+  2: {
+    label: 'Light Work',
+    feeling: 'Easy and quick - minimal thinking required',
+    examples: [
+      'Respond to simple emails',
+      'Schedule meetings',
+      'File or organize documents',
+    ],
+  },
+  1: {
+    label: 'Physical/Automatic',
+    feeling: 'No thinking needed - can do while listening to a podcast',
+    examples: [
+      'Organize your desk',
+      'Light stretching or walking',
+      'Sort through mail',
+    ],
+  },
+};
+
+// Minimum viable session options
+export const MVS_OPTIONS: { value: MinimumViableSession; label: string }[] = [
+  { value: 15, label: 'Quick task (15 min)' },
+  { value: 30, label: 'Short session (30 min)' },
+  { value: 45, label: 'Medium session (45 min)' },
+  { value: 60, label: 'Long session (1 hour)' },
+  { value: 90, label: 'Deep work (1.5 hours)' },
+  { value: 120, label: 'Extended focus (2+ hours)' },
+];
+
+// Energy state definitions
+export const ENERGY_STATES: Record<EnergyState, { label: string; description: string; icon: string }> = {
+  low: {
+    label: 'Low Energy',
+    description: 'Feeling tired or unfocused. Start with easy wins to build momentum.',
+    icon: '🔋',
+  },
+  normal: {
+    label: 'Normal Energy',
+    description: 'Feeling balanced. Mix of challenging and routine tasks.',
+    icon: '⚡',
+  },
+  high: {
+    label: 'High Energy',
+    description: 'Feeling sharp and focused. Tackle your hardest work first.',
+    icon: '🚀',
+  },
+};
+
 export interface DynamicViewConfig {
   label: string;
   days: number;
@@ -39,6 +126,9 @@ export interface Mission {
   parentMissionId?: string; // if this is a bottleneck-fix mission, links to the blocked mission
   scheduledDate?: string; // YYYY-MM-DD for scheduling on future days
   category?: MissionCategory; // for missions list (unscheduled missions)
+  // Classification fields (required for new missions)
+  cognitiveLevel: CognitiveLevel; // 1-5, how much brain power required
+  minimumViableSession: MinimumViableSession; // minimum time needed to make progress
 }
 
 // Missions in the missions list (not yet scheduled for a specific day)
@@ -50,6 +140,9 @@ export interface MissionListItem {
   category: MissionCategory;
   createdAt: string;
   order: number; // order within the category
+  // Classification fields (required)
+  cognitiveLevel: CognitiveLevel;
+  minimumViableSession: MinimumViableSession;
 }
 
 export interface RepeatingMission {
@@ -77,6 +170,17 @@ export interface CompletedMission {
   checkpoints: Checkpoint[];
   completedAt: string; // ISO timestamp
   completedDate: string; // YYYY-MM-DD for grouping
+  cognitiveLevel: CognitiveLevel;
+  minimumViableSession: MinimumViableSession;
+}
+
+// Mission recommendation for reordering
+export interface MissionRecommendation {
+  missionId: string;
+  mission: Mission;
+  originalOrder: number;
+  recommendedOrder: number;
+  reason: string;
 }
 
 // User settings

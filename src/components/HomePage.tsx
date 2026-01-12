@@ -2,7 +2,7 @@ import { useDayStart } from '../context/DayStartContext';
 import { formatDuration } from '../utils/date';
 
 export function HomePage() {
-  const { loginForDay, getBriefingData, missionsList } = useDayStart();
+  const { startLoginFlow, getBriefingData, missionsList } = useDayStart();
   const { todayMissions, totalCheckpoints, carriedOver } = getBriefingData();
 
   const allMissions = [...carriedOver, ...todayMissions];
@@ -167,7 +167,7 @@ export function HomePage() {
 
         {/* Login Button */}
         <button
-          onClick={loginForDay}
+          onClick={startLoginFlow}
           className="w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
           style={{
             backgroundColor: 'var(--color-accent)',

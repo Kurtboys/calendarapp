@@ -4,6 +4,8 @@ import { DayStartProvider, useDayStart } from './context/DayStartContext';
 import { Header } from './components/Header';
 import { HomePage } from './components/HomePage';
 import { LogoutFlowOverlay } from './components/LogoutFlowOverlay';
+import { EnergySelectionOverlay } from './components/EnergySelectionOverlay';
+import { RecommendationsOverlay } from './components/RecommendationsOverlay';
 import { TodayView, MultiDayView, CompletedView, SettingsView } from './components/views';
 import { BottleneckView } from './components/views/BottleneckView';
 import { SchedulerView } from './components/views/SchedulerView';
@@ -77,9 +79,15 @@ function CalendarApp() {
     }
   };
 
-  // Show home page when not logged in
-  if (appStep === 'home') {
-    return <HomePage />;
+  // Show home page when not logged in (including during login flow)
+  if (appStep === 'home' || appStep === 'energy-selection' || appStep === 'recommendations') {
+    return (
+      <>
+        <HomePage />
+        {appStep === 'energy-selection' && <EnergySelectionOverlay />}
+        {appStep === 'recommendations' && <RecommendationsOverlay />}
+      </>
+    );
   }
 
   return (
