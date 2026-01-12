@@ -382,6 +382,7 @@ export function TodayView({ date }: TodayViewProps) {
                         backgroundColor: 'var(--color-surface)',
                         border: `2px solid ${getBorderColor()}`,
                         opacity: isVisible ? 1 : 0.6,
+                        overflow: 'hidden',
                       }}
                       onClick={() => {
                         if (isCurrent) {
@@ -389,76 +390,59 @@ export function TodayView({ date }: TodayViewProps) {
                         }
                       }}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span
-                              className="text-xs font-bold px-2 py-0.5 rounded"
-                              style={{
-                                backgroundColor: 'var(--color-accent-light)',
-                                color: 'var(--color-accent)',
-                              }}
-                            >
-                              Mission {mission.missionNumber}
-                            </span>
-                            {isCurrent && (
-                              <span
-                                className="text-xs px-2 py-0.5 rounded"
-                                style={{
-                                  backgroundColor: missionState === 'needs-setup'
-                                    ? 'var(--color-priority-high)'
-                                    : 'var(--color-priority-low)',
-                                  color: 'white',
-                                }}
-                              >
-                                {missionState === 'needs-setup' ? 'Needs Setup' : 'Ready'}
-                              </span>
-                            )}
-                          </div>
-
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        {/* Left side: mission number badge + title */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span
+                            className="text-xs font-bold px-2 py-0.5 rounded flex-shrink-0"
+                            style={{
+                              backgroundColor: 'var(--color-accent-light)',
+                              color: 'var(--color-accent)',
+                            }}
+                          >
+                            #{mission.missionNumber}
+                          </span>
                           {isVisible ? (
-                            <>
-                              <p
-                                className="font-medium truncate"
-                                style={{ color: 'var(--color-text-primary)' }}
-                              >
-                                {mission.title}
-                              </p>
-                              {!isExpanded && mission.checkpoints.length > 0 && (
-                                <p
-                                  className="text-xs mt-1"
-                                  style={{ color: 'var(--color-text-tertiary)' }}
-                                >
-                                  {mission.checkpoints.length} checkpoint{mission.checkpoints.length !== 1 ? 's' : ''}
-                                </p>
-                              )}
-                              {isCurrent && !isExpanded && (
-                                <p
-                                  className="text-xs mt-1"
-                                  style={{ color: 'var(--color-accent)' }}
-                                >
-                                  Click to set up checkpoints
-                                </p>
-                              )}
-                            </>
+                            <span
+                              className="font-medium truncate"
+                              style={{ color: 'var(--color-text-primary)' }}
+                            >
+                              {mission.title}
+                            </span>
                           ) : (
-                            <p
-                              className="text-sm italic"
+                            <span
+                              className="text-sm italic truncate"
                               style={{ color: 'var(--color-text-tertiary)' }}
                             >
-                              Details hidden until Mission {(currentMission?.missionNumber || 0)} completes
-                            </p>
+                              Hidden until Mission {(currentMission?.missionNumber || 0)} completes
+                            </span>
                           )}
                         </div>
 
-                        <div
-                          className="text-xs font-medium px-2 py-1 rounded ml-2"
-                          style={{
-                            backgroundColor: 'var(--color-background)',
-                            color: 'var(--color-text-secondary)',
-                          }}
-                        >
-                          {formatDuration(mission.duration)}
+                        {/* Right side: status badge + duration */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {isCurrent && (
+                            <span
+                              className="text-xs px-2 py-0.5 rounded"
+                              style={{
+                                backgroundColor: missionState === 'needs-setup'
+                                  ? 'var(--color-priority-high)'
+                                  : 'var(--color-priority-low)',
+                                color: 'white',
+                              }}
+                            >
+                              {missionState === 'needs-setup' ? 'Setup' : 'Ready'}
+                            </span>
+                          )}
+                          <span
+                            className="text-xs font-medium px-2 py-0.5 rounded"
+                            style={{
+                              backgroundColor: 'var(--color-background)',
+                              color: 'var(--color-text-secondary)',
+                            }}
+                          >
+                            {formatDuration(mission.duration)}
+                          </span>
                         </div>
                       </div>
 
