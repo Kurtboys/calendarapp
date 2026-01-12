@@ -136,22 +136,29 @@ export function TodayView({ date }: TodayViewProps) {
     return Array.from({ length: 15 }, (_, i) => i + 1).filter(n => !usedNumbers.includes(n));
   }, [assignedMissions]);
 
-  // Calculate mission block positions on timeline based on Parkinson's Law
+  // Calculate mission block positions on timeline
+  // Each block has a minimum height of 48px + 8px gap between blocks
+  const BLOCK_MIN_HEIGHT = 48;
+  const BLOCK_GAP = 8;
+
   const getMissionBlockStyle = (missionIndex: number) => {
     let topPixels = 0;
-    // Accumulate top position using effective rendered heights (with minimum)
+
+    // Stack blocks vertically with gaps
     for (let i = 0; i < missionIndex; i++) {
-      const prevHeightPixels = (assignedMissions[i].duration / 60) * hourHeight;
-      topPixels += Math.max(prevHeightPixels, 60); // Use same minimum as rendered height
-      if (assignedMissions[i].id === expandedTimelineMissionId) {
-        topPixels += 200;
-      }
+      const prevDurationHeight = (assignedMissions[i].duration / 60) * hourHeight;
+      const prevBlockHeight = Math.max(prevDurationHeight, BLOCK_MIN_HEIGHT);
+      const prevExpandedExtra = assignedMissions[i].id === expandedTimelineMissionId ? 200 : 0;
+      topPixels += prevBlockHeight + prevExpandedExtra + BLOCK_GAP;
     }
+
     const mission = assignedMissions[missionIndex];
-    const heightPixels = (mission.duration / 60) * hourHeight;
+    const durationHeight = (mission.duration / 60) * hourHeight;
+    const blockHeight = Math.max(durationHeight, BLOCK_MIN_HEIGHT);
     const isExpanded = mission.id === expandedTimelineMissionId;
     const expandedExtra = isExpanded ? 200 : 0;
-    return { top: topPixels, height: Math.max(heightPixels, 60) + expandedExtra };
+
+    return { top: topPixels, height: blockHeight + expandedExtra };
   };
 
   // Check if mission details should be visible
@@ -375,10 +382,10 @@ export function TodayView({ date }: TodayViewProps) {
                   return (
                     <div
                       key={mission.id}
-                      className={`absolute left-0 right-0 rounded-lg p-3 transition-all cursor-pointer hover:scale-[1.005]`}
+                      className={`absolute left-0 right-0 rounded-lg p-2 transition-all cursor-pointer hover:scale-[1.005]`}
                       style={{
-                        top: style.top + 4,
-                        height: style.height - 8,
+                        top: style.top,
+                        height: style.height,
                         backgroundColor: 'var(--color-surface)',
                         border: `2px solid ${getBorderColor()}`,
                         opacity: isVisible ? 1 : 0.6,
@@ -390,52 +397,38 @@ export function TodayView({ date }: TodayViewProps) {
                         }
                       }}
                     >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        {/* Left side: mission number badge + title */}
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2" style={{ flexWrap: 'nowrap' }}>
+                        {/* Left: number + title */}
+                        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                           <span
-                            className="text-xs font-bold px-2 py-0.5 rounded flex-shrink-0"
+                            className="text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0"
                             style={{
                               backgroundColor: 'var(--color-accent-light)',
                               color: 'var(--color-accent)',
                             }}
                           >
-                            #{mission.missionNumber}
+                            {mission.missionNumber}
                           </span>
-                          {isVisible ? (
-                            <span
-                              className="font-medium truncate"
-                              style={{ color: 'var(--color-text-primary)' }}
-                            >
-                              {mission.title}
-                            </span>
-                          ) : (
-                            <span
-                              className="text-sm italic truncate"
-                              style={{ color: 'var(--color-text-tertiary)' }}
-                            >
-                              Hidden until Mission {(currentMission?.missionNumber || 0)} completes
-                            </span>
-                          )}
+                          <span
+                            className="text-sm truncate"
+                            style={{ color: isVisible ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}
+                          >
+                            {isVisible ? mission.title : 'Hidden'}
+                          </span>
                         </div>
 
-                        {/* Right side: status badge + duration */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {isCurrent && (
+                        {/* Right: status + duration */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {isCurrent && missionState === 'needs-setup' && (
                             <span
-                              className="text-xs px-2 py-0.5 rounded"
-                              style={{
-                                backgroundColor: missionState === 'needs-setup'
-                                  ? 'var(--color-priority-high)'
-                                  : 'var(--color-priority-low)',
-                                color: 'white',
-                              }}
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{ backgroundColor: 'var(--color-priority-high)', color: 'white' }}
                             >
-                              {missionState === 'needs-setup' ? 'Setup' : 'Ready'}
+                              !
                             </span>
                           )}
                           <span
-                            className="text-xs font-medium px-2 py-0.5 rounded"
+                            className="text-xs px-1.5 py-0.5 rounded"
                             style={{
                               backgroundColor: 'var(--color-background)',
                               color: 'var(--color-text-secondary)',
