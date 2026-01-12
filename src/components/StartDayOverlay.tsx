@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDayStart } from '../context/DayStartContext';
-import { getEffectiveDate, getDayName, getMonthName, getDayStartHour, setDayStartHour } from '../utils/date';
+import { getEffectiveDate, getDayName, getMonthName, getCurrentHour } from '../utils/date';
 
 function formatHour(hour: number): string {
   if (hour === 0) return '12 AM';
@@ -10,18 +10,11 @@ function formatHour(hour: number): string {
 }
 
 function ReadyStep({ onProceed }: { onProceed: () => void }) {
-  const [dayStartHour, setDayStartHourState] = useState(getDayStartHour);
   const effectiveDate = getEffectiveDate();
   const dayName = getDayName(effectiveDate);
   const monthName = getMonthName(effectiveDate);
   const dayNumber = effectiveDate.getDate();
-
-  const hours = Array.from({ length: 24 }, (_, i) => i);
-
-  const handleDayStartChange = (hour: number) => {
-    setDayStartHourState(hour);
-    setDayStartHour(hour);
-  };
+  const currentHour = getCurrentHour();
 
   return (
     <div className="text-center px-6 max-w-md">
@@ -38,7 +31,14 @@ function ReadyStep({ onProceed }: { onProceed: () => void }) {
         {monthName} {dayNumber}
       </h1>
 
-      <div className="h-16" />
+      <p
+        className="mt-4 text-lg"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        Starting at {formatHour(currentHour)}
+      </p>
+
+      <div className="h-12" />
 
       <button
         onClick={onProceed}
@@ -49,45 +49,56 @@ function ReadyStep({ onProceed }: { onProceed: () => void }) {
           boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
         }}
       >
-        Ready to Start the Day
+        Login
       </button>
 
-      <div className="mt-6 flex items-center justify-center gap-2">
-        <span
-          className="text-sm"
-          style={{ color: 'var(--color-text-tertiary)' }}
-        >
-          Your day resets at
-        </span>
-        <select
-          value={dayStartHour}
-          onChange={(e) => handleDayStartChange(Number(e.target.value))}
-          className="px-2 py-1 rounded-lg text-sm font-medium cursor-pointer"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text-primary)',
-            border: `1px solid var(--color-border)`,
-          }}
-        >
-          {hours.map((h) => (
-            <option key={h} value={h}>
-              {formatHour(h)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <p
+        className="mt-6 text-sm"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        Day resets at 2 AM
+      </p>
     </div>
   );
 }
 
-function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime: number) => void }) {
-  const [startTime, setStartTime] = useState(7); // Default 7 AM
-  const [endTime, setEndTime] = useState(22); // Default 10 PM
+function ConfigureStep({ onComplete }: { onComplete: (endTime: number) => void }) {
+  const currentHour = getCurrentHour();
+  // Default end time: if before 6 PM, default to 10 PM; otherwise default to 2 AM
+  const defaultEnd = currentHour < 18 ? 22 : 2;
+  const [endTime, setEndTime] = useState(defaultEnd);
 
-  const hours = Array.from({ length: 24 }, (_, i) => i);
+  // Generate hours from current hour to 2 AM the next day
+  const getAvailableHours = () => {
+    const hours: { value: number; label: string; isNextDay: boolean }[] = [];
+
+    // From current hour to midnight
+    for (let h = currentHour + 1; h < 24; h++) {
+      hours.push({ value: h, label: formatHour(h), isNextDay: false });
+    }
+
+    // From midnight to 2 AM (next day)
+    for (let h = 0; h <= 2; h++) {
+      hours.push({ value: h, label: formatHour(h), isNextDay: true });
+    }
+
+    return hours;
+  };
+
+  const availableHours = getAvailableHours();
+  const selectedIsNextDay = endTime <= 2;
+
+  // Calculate productive hours
+  const getProductiveHours = () => {
+    if (endTime > currentHour) {
+      return endTime - currentHour;
+    } else {
+      return (24 - currentHour) + endTime;
+    }
+  };
 
   const handleSubmit = () => {
-    onComplete(startTime, endTime);
+    onComplete(endTime);
   };
 
   return (
@@ -96,40 +107,34 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
         className="text-2xl font-semibold text-center mb-2"
         style={{ color: 'var(--color-text-primary)' }}
       >
-        Set Your Day Window
+        How late are you working?
       </h2>
       <p
-        className="text-center mb-10"
+        className="text-center mb-8"
         style={{ color: 'var(--color-text-secondary)' }}
       >
-        When do you want to start and end your productive day?
+        Starting now at {formatHour(currentHour)}
       </p>
 
-      <div className="flex items-center justify-center gap-6 mb-12">
-        {/* Start Time */}
+      <div className="flex items-center justify-center gap-6 mb-8">
+        {/* Current Time (read-only) */}
         <div className="flex flex-col items-center">
           <label
             className="text-sm font-medium mb-2"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            Start
+            Now
           </label>
-          <select
-            value={startTime}
-            onChange={(e) => setStartTime(Number(e.target.value))}
-            className="px-4 py-3 rounded-xl text-lg font-medium appearance-none cursor-pointer min-w-[120px] text-center"
+          <div
+            className="px-4 py-3 rounded-xl text-lg font-medium min-w-[120px] text-center"
             style={{
               backgroundColor: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
+              color: 'var(--color-text-secondary)',
               border: `2px solid var(--color-border)`,
             }}
           >
-            {hours.map((h) => (
-              <option key={h} value={h}>
-                {formatHour(h)}
-              </option>
-            ))}
-          </select>
+            {formatHour(currentHour)}
+          </div>
         </div>
 
         {/* Arrow */}
@@ -146,8 +151,8 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
             className="text-sm font-medium mb-2"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            End {endTime <= startTime && endTime !== startTime && (
-              <span style={{ color: 'var(--color-accent)' }}>(+1 day)</span>
+            Until {selectedIsNextDay && (
+              <span style={{ color: 'var(--color-accent)' }}>(tomorrow)</span>
             )}
           </label>
           <select
@@ -157,12 +162,12 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
             style={{
               backgroundColor: 'var(--color-surface)',
               color: 'var(--color-text-primary)',
-              border: `2px solid var(--color-border)`,
+              border: `2px solid var(--color-accent)`,
             }}
           >
-            {hours.map((h) => (
-              <option key={h} value={h}>
-                {formatHour(h)}
+            {availableHours.map((h) => (
+              <option key={`${h.value}-${h.isNextDay}`} value={h.value}>
+                {h.label}{h.isNextDay ? ' (+1)' : ''}
               </option>
             ))}
           </select>
@@ -174,25 +179,20 @@ function ConfigureStep({ onComplete }: { onComplete: (startTime: number, endTime
         className="text-center mb-8"
         style={{ color: 'var(--color-text-secondary)' }}
       >
-        {endTime > startTime
-          ? `${endTime - startTime} hours of productive time`
-          : endTime < startTime
-          ? `${24 - startTime + endTime} hours (ends tomorrow)`
-          : 'Please select different times'}
+        {getProductiveHours()} hours of productive time
       </p>
 
       <div className="flex justify-center">
         <button
           onClick={handleSubmit}
-          disabled={startTime === endTime}
-          className="px-8 py-4 rounded-2xl text-lg font-semibold transition-all duration-200 hover:scale-105 active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          className="px-8 py-4 rounded-2xl text-lg font-semibold transition-all duration-200 hover:scale-105 active:scale-100"
           style={{
             backgroundColor: 'var(--color-accent)',
             color: 'white',
             boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
           }}
         >
-          Let's Go
+          Start Day
         </button>
       </div>
     </div>

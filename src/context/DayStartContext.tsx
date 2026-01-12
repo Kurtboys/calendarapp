@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { DayConfig, Mission, Checkpoint, RepeatingMission } from '../types';
-import { getEffectiveDateString, hasNewDayStarted } from '../utils/date';
+import { getEffectiveDateString, hasNewDayStarted, getCurrentHour } from '../utils/date';
 
 type DayStartStep = 'ready' | 'configure' | 'complete';
 
@@ -22,7 +22,7 @@ interface DayStartContextType {
 
   // Step transitions
   proceedToConfig: () => void;
-  completeSetup: (startTime: number, endTime: number) => void;
+  completeSetup: (endTime: number) => void;
 
   // Mission management
   addMission: (title: string, duration: number) => void;
@@ -188,7 +188,9 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
     setStep('configure');
   }, []);
 
-  const completeSetup = useCallback((startTime: number, endTime: number) => {
+  const completeSetup = useCallback((endTime: number) => {
+    // Auto-capture current hour as start time
+    const startTime = getCurrentHour();
     const existingMissions = dayConfig?.date === currentDayDate ? dayConfig.missions : [];
 
     // Create missions from repeating missions if this is a fresh day

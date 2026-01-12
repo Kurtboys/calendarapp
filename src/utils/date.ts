@@ -105,48 +105,30 @@ export function getYearMonths(year: number): Date[] {
   return months;
 }
 
-// Day boundary logic - configurable day start hour
-const DAY_START_HOUR_KEY = 'dayStartHour';
-const DEFAULT_DAY_START_HOUR = 5;
+// Day boundary is fixed at 2 AM - no configuration needed
+const DAY_RESET_HOUR = 2;
 
 /**
- * Gets the configured day start hour from localStorage
+ * Gets the fixed day reset hour (2 AM)
  */
-export function getDayStartHour(): number {
-  const stored = localStorage.getItem(DAY_START_HOUR_KEY);
-  if (stored) {
-    const hour = parseInt(stored, 10);
-    if (!isNaN(hour) && hour >= 0 && hour <= 23) {
-      return hour;
-    }
-  }
-  return DEFAULT_DAY_START_HOUR;
+export function getDayResetHour(): number {
+  return DAY_RESET_HOUR;
 }
 
 /**
- * Sets the day start hour in localStorage
- */
-export function setDayStartHour(hour: number): void {
-  if (hour >= 0 && hour <= 23) {
-    localStorage.setItem(DAY_START_HOUR_KEY, hour.toString());
-  }
-}
-
-/**
- * Gets the "effective date" based on the configured day start hour.
- * If it's before the start hour, returns yesterday's date.
- * If it's at or after the start hour, returns today's date.
+ * Gets the "effective date" based on the 2 AM day boundary.
+ * If it's before 2 AM, returns yesterday's date.
+ * If it's at or after 2 AM, returns today's date.
  */
 export function getEffectiveDate(now: Date = new Date()): Date {
   const hour = now.getHours();
-  const dayStartHour = getDayStartHour();
 
-  if (hour < dayStartHour) {
-    // Before day start hour - still "yesterday"
+  if (hour < DAY_RESET_HOUR) {
+    // Before 2 AM - still "yesterday"
     return addDays(now, -1);
   }
 
-  // At or after day start hour - it's "today"
+  // At or after 2 AM - it's "today"
   return now;
 }
 
@@ -171,8 +153,8 @@ export function hasNewDayStarted(lastStartedDate: string | null): boolean {
 }
 
 /**
- * Checks if it's currently past the day start threshold
+ * Gets the current hour (for auto-capturing login time)
  */
-export function isPastDayStart(now: Date = new Date()): boolean {
-  return now.getHours() >= getDayStartHour();
+export function getCurrentHour(): number {
+  return new Date().getHours();
 }
