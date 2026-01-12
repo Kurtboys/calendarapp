@@ -2,70 +2,43 @@
 
 /*
  * Söhne Font Setup
+ * - Regular text: Söhne Medium (500)
+ * - Bold/headers: Söhne Semibold (600)
+ * - Add class "mono" to any element for Söhne Mono
  */
 
-/* Söhne (Sans) */
+/* Söhne (Sans) - Medium for all normal weights */
 @font-face {
   font-family: 'Söhne';
   src: url('/calendarapp/fonts/test-soehne-kraftig.woff2') format('woff2');
-  font-weight: 400;
+  font-weight: 100 500;
   font-style: normal;
   font-display: swap;
 }
 
-@font-face {
-  font-family: 'Söhne';
-  src: url('/calendarapp/fonts/test-soehne-kraftig.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
+/* Söhne (Sans) - Semibold for bold weights */
 @font-face {
   font-family: 'Söhne';
   src: url('/calendarapp/fonts/test-soehne-halbfett.woff2') format('woff2');
-  font-weight: 600;
+  font-weight: 600 900;
   font-style: normal;
   font-display: swap;
 }
 
-@font-face {
-  font-family: 'Söhne';
-  src: url('/calendarapp/fonts/test-soehne-halbfett.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* Söhne Mono */
+/* Söhne Mono - Medium for all normal weights */
 @font-face {
   font-family: 'Söhne Mono';
   src: url('/calendarapp/fonts/test-soehne-mono-kraftig.woff2') format('woff2');
-  font-weight: 400;
+  font-weight: 100 500;
   font-style: normal;
   font-display: swap;
 }
 
-@font-face {
-  font-family: 'Söhne Mono';
-  src: url('/calendarapp/fonts/test-soehne-mono-kraftig.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
+/* Söhne Mono - Semibold for bold weights */
 @font-face {
   font-family: 'Söhne Mono';
   src: url('/calendarapp/fonts/test-soehne-mono-halbfett.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Söhne Mono';
-  src: url('/calendarapp/fonts/test-soehne-mono-halbfett.woff2') format('woff2');
-  font-weight: 700;
+  font-weight: 600 900;
   font-style: normal;
   font-display: swap;
 }
@@ -128,6 +101,7 @@ html, body, #root {
 
 body {
   font-family: var(--font-family-sans);
+  font-weight: 500;
   background-color: var(--color-background);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -141,6 +115,17 @@ textarea,
 select,
 button {
   font-family: var(--font-family-sans);
+  font-weight: 500;
+}
+
+/* Utility class for Söhne Mono - add "mono" class to any element */
+.mono {
+  font-family: var(--font-family-mono) !important;
+}
+
+.mono-semibold {
+  font-family: var(--font-family-mono) !important;
+  font-weight: 600 !important;
 }
 
 /* Scrollbar styling */
