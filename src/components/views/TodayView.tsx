@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
 import { ActiveMissionModal } from '../ActiveMissionModal';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName } from '../../utils/date';
+import type { Mission } from '../../types';
 
 interface TodayViewProps {
   date: Date;
@@ -42,6 +43,7 @@ export function TodayView({ date }: TodayViewProps) {
     getCurrentMission,
     getAssignedMissions,
     getUnassignedMissions,
+    assignMissionNumber,
     addCheckpoint,
     deleteCheckpoint,
   } = useDayStart();
@@ -49,6 +51,8 @@ export function TodayView({ date }: TodayViewProps) {
   const [expandedTimelineMissionId, setExpandedTimelineMissionId] = useState<string | null>(null);
   const [timelineCheckpointTitle, setTimelineCheckpointTitle] = useState('');
   const [timelineCheckpointDuration, setTimelineCheckpointDuration] = useState(15);
+  const [draggedMissionId, setDraggedMissionId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const effectiveDate = getEffectiveDate();
   const isToday = date.toDateString() === effectiveDate.toDateString();
@@ -56,6 +60,9 @@ export function TodayView({ date }: TodayViewProps) {
   const assignedMissions = getAssignedMissions();
   const unassignedMissions = getUnassignedMissions();
   const currentMission = getCurrentMission();
+
+  // Combine all missions: assigned first (sorted by number), then unassigned
+  const allMissions = [...assignedMissions, ...unassignedMissions];
 
   const productiveHours = dayConfig ? getProductiveHours(dayConfig.startTime, dayConfig.endTime) : [];
   const hourHeight = 80; // pixels per hour
@@ -72,6 +79,72 @@ export function TodayView({ date }: TodayViewProps) {
       handleAddTimelineCheckpoint(missionId);
     }
   };
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, missionId: string) => {
+    setDraggedMissionId(missionId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', missionId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+
+    if (!draggedMissionId) return;
+
+    // Find the dragged mission
+    const draggedMission = allMissions.find(m => m.id === draggedMissionId);
+    if (!draggedMission) return;
+
+    // Reorder: assign sequential numbers based on new position
+    // First, create new order array
+    const reorderedMissions = allMissions.filter(m => m.id !== draggedMissionId);
+    reorderedMissions.splice(targetIndex, 0, draggedMission);
+
+    // Assign new mission numbers (1-based, sequential)
+    reorderedMissions.forEach((mission, idx) => {
+      const newNumber = idx + 1;
+      if (mission.missionNumber !== newNumber) {
+        assignMissionNumber(mission.id, newNumber);
+      }
+    });
+
+    setDraggedMissionId(null);
+  }, [draggedMissionId, allMissions, assignMissionNumber]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedMissionId(null);
+    setDragOverIndex(null);
+  }, []);
+
+  // Quick assign: click to set next available number or remove
+  const handleQuickAssign = useCallback((mission: Mission) => {
+    if (mission.missionNumber !== undefined) {
+      // Already has a number - remove it
+      assignMissionNumber(mission.id, undefined);
+    } else {
+      // Assign next available number
+      const usedNumbers = assignedMissions.map(m => m.missionNumber).filter(n => n !== undefined) as number[];
+      let nextNumber = 1;
+      while (usedNumbers.includes(nextNumber) && nextNumber <= 15) {
+        nextNumber++;
+      }
+      if (nextNumber <= 15) {
+        assignMissionNumber(mission.id, nextNumber);
+      }
+    }
+  }, [assignedMissions, assignMissionNumber]);
 
   // Calculate mission block positions on timeline based on Parkinson's Law
   const getMissionBlockStyle = (missionIndex: number) => {
@@ -124,119 +197,122 @@ export function TodayView({ date }: TodayViewProps) {
       {activeMission && <ActiveMissionModal />}
 
       <div className="h-full flex">
-        {/* Left Sidebar - Mission summary (view only) */}
+        {/* Left Sidebar - Draggable mission list */}
         <div
           className="w-72 flex-shrink-0 border-r overflow-auto"
           style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
         >
           <div className="p-4">
             <h2
-              className="text-sm font-semibold uppercase tracking-wider mb-4"
+              className="text-sm font-semibold uppercase tracking-wider mb-2"
               style={{ color: 'var(--color-text-tertiary)' }}
             >
               Today's Missions
             </h2>
+            <p
+              className="text-xs mb-4"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              Drag to reorder • Click number to toggle
+            </p>
 
-            {/* Assigned missions summary */}
-            {assignedMissions.length > 0 && (
-              <div className="mb-6">
-                <h3
-                  className="text-xs font-medium mb-2"
-                  style={{ color: 'var(--color-text-tertiary)' }}
-                >
-                  Scheduled ({assignedMissions.length})
-                </h3>
-                <div className="space-y-2">
-                  {assignedMissions.map((mission) => (
+            {/* All missions in one draggable list */}
+            {allMissions.length > 0 ? (
+              <div className="space-y-2">
+                {allMissions.map((mission, index) => {
+                  const isScheduled = mission.missionNumber !== undefined;
+                  const isDragging = draggedMissionId === mission.id;
+                  const isDragOver = dragOverIndex === index;
+
+                  return (
                     <div
                       key={mission.id}
-                      className="p-3 rounded-lg"
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, mission.id)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}
+                      className={`p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all ${
+                        isDragging ? 'opacity-50 scale-95' : ''
+                      }`}
                       style={{
                         backgroundColor: mission.id === currentMission?.id
                           ? 'var(--color-accent-light)'
                           : 'var(--color-background)',
-                        border: `1px solid ${mission.id === currentMission?.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                        border: isDragOver
+                          ? '2px dashed var(--color-accent)'
+                          : `1px solid ${mission.id === currentMission?.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                        transform: isDragOver ? 'translateY(2px)' : undefined,
                       }}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className="text-xs font-bold px-1.5 py-0.5 rounded"
-                          style={{
-                            backgroundColor: 'var(--color-priority-low)',
-                            color: 'white',
-                          }}
-                        >
-                          #{mission.missionNumber}
-                        </span>
-                        <span
-                          className="text-xs px-1.5 py-0.5 rounded"
-                          style={{
-                            backgroundColor: 'var(--color-background)',
-                            color: 'var(--color-text-tertiary)',
-                          }}
-                        >
-                          {formatDuration(mission.duration)}
-                        </span>
-                      </div>
-                      <p
-                        className="text-sm font-medium"
-                        style={{ color: 'var(--color-text-primary)' }}
-                      >
-                        {mission.title}
-                      </p>
-                      {mission.checkpoints.length > 0 && (
-                        <p
-                          className="text-xs mt-1"
+                      <div className="flex items-center gap-2">
+                        {/* Drag handle */}
+                        <div
+                          className="flex-shrink-0 text-gray-400"
                           style={{ color: 'var(--color-text-tertiary)' }}
                         >
-                          {mission.checkpoints.length} checkpoint{mission.checkpoints.length !== 1 ? 's' : ''}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                          </svg>
+                        </div>
 
-            {/* Unassigned missions */}
-            {unassignedMissions.length > 0 && (
-              <div>
-                <h3
-                  className="text-xs font-medium mb-2"
-                  style={{ color: 'var(--color-text-tertiary)' }}
-                >
-                  Unscheduled ({unassignedMissions.length})
-                </h3>
-                <div className="space-y-2">
-                  {unassignedMissions.map((mission) => (
-                    <div
-                      key={mission.id}
-                      className="p-3 rounded-lg"
-                      style={{
-                        backgroundColor: 'var(--color-background)',
-                        border: '1px solid var(--color-border)',
-                        opacity: 0.7,
-                      }}
-                    >
-                      <p
-                        className="text-sm"
-                        style={{ color: 'var(--color-text-secondary)' }}
-                      >
-                        {mission.title}
-                      </p>
-                      <p
-                        className="text-xs mt-1"
-                        style={{ color: 'var(--color-text-tertiary)' }}
-                      >
-                        {formatDuration(mission.duration)} - Not scheduled
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                        {/* Mission number button */}
+                        <button
+                          onClick={() => handleQuickAssign(mission)}
+                          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors"
+                          style={{
+                            backgroundColor: isScheduled ? 'var(--color-priority-low)' : 'var(--color-border)',
+                            color: isScheduled ? 'white' : 'var(--color-text-tertiary)',
+                          }}
+                          title={isScheduled ? 'Click to unschedule' : 'Click to schedule'}
+                        >
+                          {isScheduled ? `#${mission.missionNumber}` : '—'}
+                        </button>
 
-            {assignedMissions.length === 0 && unassignedMissions.length === 0 && (
+                        {/* Mission info */}
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className="text-sm font-medium truncate"
+                            style={{ color: 'var(--color-text-primary)' }}
+                          >
+                            {mission.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span
+                              className="text-xs"
+                              style={{ color: 'var(--color-text-tertiary)' }}
+                            >
+                              {formatDuration(mission.duration)}
+                            </span>
+                            {mission.checkpoints.length > 0 && (
+                              <span
+                                className="text-xs"
+                                style={{ color: 'var(--color-text-tertiary)' }}
+                              >
+                                • {mission.checkpoints.length} cp
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Drop zone at the end */}
+                <div
+                  onDragOver={(e) => handleDragOver(e, allMissions.length)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, allMissions.length)}
+                  className="h-8 rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: dragOverIndex === allMissions.length ? 'var(--color-accent-light)' : 'transparent',
+                    border: dragOverIndex === allMissions.length ? '2px dashed var(--color-accent)' : '2px dashed transparent',
+                  }}
+                />
+              </div>
+            ) : (
               <div className="text-center py-8">
                 <p style={{ color: 'var(--color-text-tertiary)' }}>
                   No missions yet
@@ -529,7 +605,7 @@ export function TodayView({ date }: TodayViewProps) {
                       No missions scheduled
                     </p>
                     <p style={{ color: 'var(--color-text-tertiary)' }}>
-                      Go to Scheduler to add and schedule missions
+                      Click the number buttons in the sidebar to schedule missions
                     </p>
                   </div>
                 </div>
