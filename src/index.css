@@ -4,20 +4,13 @@
  * Söhne Font Setup
  *
  * Add your Söhne font files (.woff2) to /public/fonts/
- * Expected files: Soehne-Buch.woff2, Soehne-Kraftig.woff2, Soehne-Halbfett.woff2, Soehne-Dreiviertelfett.woff2
+ * Expected files: soehne-medium.woff2, soehne-semibold.woff2, soehne-mono-medium.woff2, soehne-mono-semibold.woff2
  */
 
+/* Söhne (Sans) */
 @font-face {
   font-family: 'Söhne';
-  src: url('/fonts/Soehne-Buch.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Söhne';
-  src: url('/fonts/Soehne-Kraftig.woff2') format('woff2');
+  src: url('/fonts/soehne-medium.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -25,22 +18,32 @@
 
 @font-face {
   font-family: 'Söhne';
-  src: url('/fonts/Soehne-Halbfett.woff2') format('woff2');
+  src: url('/fonts/soehne-semibold.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 
+/* Söhne Mono */
 @font-face {
-  font-family: 'Söhne';
-  src: url('/fonts/Soehne-Dreiviertelfett.woff2') format('woff2');
-  font-weight: 700;
+  font-family: 'Söhne Mono';
+  src: url('/fonts/soehne-mono-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Söhne Mono';
+  src: url('/fonts/soehne-mono-semibold.woff2') format('woff2');
+  font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 
 @theme {
   --font-family-sans: 'Söhne', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'Söhne Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
   /* Light mode colors (default) */
   --color-background: #ffffff;
