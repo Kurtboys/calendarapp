@@ -1,25 +1,11 @@
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 
-export type ViewType = 'today' | '3day' | '5day' | '7day' | '30day' | 'year' | 'bottleneck';
+export type ViewType = 'today' | '3day' | 'bottleneck' | 'scheduler' | 'dynamic';
 
-export interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  duration: number; // in minutes
-  priority: Priority;
-  date: string; // ISO date string (YYYY-MM-DD)
-  order: number; // for drag-and-drop ordering within a day
-  completed: boolean;
-  createdAt: string;
-}
-
-export interface DayData {
-  date: Date;
-  dateString: string;
-  isToday: boolean;
-  isCurrentMonth: boolean;
-  tasks: Task[];
+export interface DynamicViewConfig {
+  label: string;
+  days: number;
+  startDate: Date;
 }
 
 export interface Checkpoint {
@@ -49,6 +35,7 @@ export interface Mission {
   bottleneckReason?: string; // description of what's blocking
   bottleneckDate?: string; // when it was marked as bottleneck
   parentMissionId?: string; // if this is a bottleneck-fix mission, links to the blocked mission
+  scheduledDate?: string; // YYYY-MM-DD for scheduling on future days
 }
 
 export interface RepeatingMission {
@@ -66,7 +53,3 @@ export interface DayConfig {
   missions: Mission[];
   startedAt: string; // ISO timestamp when day was started
 }
-
-// Legacy type aliases for backwards compatibility during migration
-export type Goal = Mission;
-export type RepeatingGoal = RepeatingMission;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
 import { ActiveMissionModal } from '../ActiveMissionModal';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName } from '../../utils/date';
@@ -38,26 +38,17 @@ export function TodayView({ date }: TodayViewProps) {
   const {
     dayConfig,
     activeMission,
-    addMission,
-    addCheckpoint,
-    deleteMission,
-    deleteCheckpoint,
-    assignMissionNumber,
     startMission,
     getCurrentMission,
     getAssignedMissions,
     getUnassignedMissions,
+    addCheckpoint,
+    deleteCheckpoint,
   } = useDayStart();
 
-  const [newMissionTitle, setNewMissionTitle] = useState('');
-  const [newMissionDuration, setNewMissionDuration] = useState(30);
-  const [newCheckpointTitle, setNewCheckpointTitle] = useState('');
-  const [newCheckpointDuration, setNewCheckpointDuration] = useState(15);
-  const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
   const [expandedTimelineMissionId, setExpandedTimelineMissionId] = useState<string | null>(null);
   const [timelineCheckpointTitle, setTimelineCheckpointTitle] = useState('');
   const [timelineCheckpointDuration, setTimelineCheckpointDuration] = useState(15);
-  const [showCompletedList, setShowCompletedList] = useState(false);
 
   const effectiveDate = getEffectiveDate();
   const isToday = date.toDateString() === effectiveDate.toDateString();
@@ -65,48 +56,15 @@ export function TodayView({ date }: TodayViewProps) {
   const assignedMissions = getAssignedMissions();
   const unassignedMissions = getUnassignedMissions();
   const currentMission = getCurrentMission();
-  const allMissions = dayConfig?.missions || [];
-  const completedMissions = allMissions.filter(m => m.completed).sort((a, b) => {
-    if (a.completedAt && b.completedAt) {
-      return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
-    }
-    return 0;
-  });
 
   const productiveHours = dayConfig ? getProductiveHours(dayConfig.startTime, dayConfig.endTime) : [];
   const hourHeight = 80; // pixels per hour
 
-  const handleAddMission = useCallback(() => {
-    if (!newMissionTitle.trim()) return;
-    addMission(newMissionTitle.trim(), newMissionDuration);
-    setNewMissionTitle('');
-    setNewMissionDuration(30);
-  }, [newMissionTitle, newMissionDuration, addMission]);
-
-  const handleAddCheckpoint = useCallback((missionId: string) => {
-    if (!newCheckpointTitle.trim()) return;
-    addCheckpoint(missionId, newCheckpointTitle.trim(), newCheckpointDuration);
-    setNewCheckpointTitle('');
-    setNewCheckpointDuration(15);
-  }, [newCheckpointTitle, newCheckpointDuration, addCheckpoint]);
-
-  const handleAddTimelineCheckpoint = useCallback((missionId: string) => {
+  const handleAddTimelineCheckpoint = (missionId: string) => {
     if (!timelineCheckpointTitle.trim()) return;
     addCheckpoint(missionId, timelineCheckpointTitle.trim(), timelineCheckpointDuration);
     setTimelineCheckpointTitle('');
     setTimelineCheckpointDuration(15);
-  }, [timelineCheckpointTitle, timelineCheckpointDuration, addCheckpoint]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleAddMission();
-    }
-  };
-
-  const handleCheckpointKeyDown = (e: React.KeyboardEvent, missionId: string) => {
-    if (e.key === 'Enter') {
-      handleAddCheckpoint(missionId);
-    }
   };
 
   const handleTimelineCheckpointKeyDown = (e: React.KeyboardEvent, missionId: string) => {
@@ -116,35 +74,26 @@ export function TodayView({ date }: TodayViewProps) {
   };
 
   // Calculate mission block positions on timeline based on Parkinson's Law
-  // Account for expanded mission taking more space
   const getMissionBlockStyle = (missionIndex: number) => {
     let topMinutes = 0;
     let extraHeight = 0;
     for (let i = 0; i < missionIndex; i++) {
       topMinutes += assignedMissions[i].duration;
-      // Add extra height if previous mission is expanded
       if (assignedMissions[i].id === expandedTimelineMissionId) {
-        extraHeight += 200; // Extra space for expanded checkpoints area
+        extraHeight += 200;
       }
     }
     const mission = assignedMissions[missionIndex];
     const topPixels = (topMinutes / 60) * hourHeight + extraHeight;
     const heightPixels = (mission.duration / 60) * hourHeight;
     const isExpanded = mission.id === expandedTimelineMissionId;
-    // If expanded, add extra height for checkpoint area
     const expandedExtra = isExpanded ? 200 : 0;
     return { top: topPixels, height: Math.max(heightPixels, 60) + expandedExtra };
   };
 
-  // Check if mission details should be visible (only current mission or expanded)
+  // Check if mission details should be visible
   const isMissionVisible = (missionId: string) => {
     return currentMission?.id === missionId || expandedTimelineMissionId === missionId;
-  };
-
-  // Get available mission numbers (1-15 minus already assigned)
-  const getAvailableMissionNumbers = () => {
-    const usedNumbers = assignedMissions.map(m => m.missionNumber).filter(n => n !== undefined);
-    return Array.from({ length: 15 }, (_, i) => i + 1).filter(n => !usedNumbers.includes(n));
   };
 
   // Get mission state for visual indicators
@@ -175,7 +124,7 @@ export function TodayView({ date }: TodayViewProps) {
       {activeMission && <ActiveMissionModal />}
 
       <div className="h-full flex">
-        {/* Left Sidebar - Unassigned Missions */}
+        {/* Left Sidebar - Mission summary (view only) */}
         <div
           className="w-72 flex-shrink-0 border-r overflow-auto"
           style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
@@ -185,236 +134,116 @@ export function TodayView({ date }: TodayViewProps) {
               className="text-sm font-semibold uppercase tracking-wider mb-4"
               style={{ color: 'var(--color-text-tertiary)' }}
             >
-              Missions
+              Today's Missions
             </h2>
 
-            {/* Add new mission */}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={newMissionTitle}
-                onChange={(e) => setNewMissionTitle(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="New mission..."
-                className="w-full px-3 py-2 rounded-lg text-sm mb-2"
-                style={{
-                  backgroundColor: 'var(--color-background)',
-                  color: 'var(--color-text-primary)',
-                  border: '1px solid var(--color-border)',
-                }}
-              />
-              <div className="flex gap-2">
-                <select
-                  value={newMissionDuration}
-                  onChange={(e) => setNewMissionDuration(Number(e.target.value))}
-                  className="flex-1 px-2 py-2 rounded-lg text-sm"
-                  style={{
-                    backgroundColor: 'var(--color-background)',
-                    color: 'var(--color-text-primary)',
-                    border: '1px solid var(--color-border)',
-                  }}
+            {/* Assigned missions summary */}
+            {assignedMissions.length > 0 && (
+              <div className="mb-6">
+                <h3
+                  className="text-xs font-medium mb-2"
+                  style={{ color: 'var(--color-text-tertiary)' }}
                 >
-                  <option value={15}>15m</option>
-                  <option value={30}>30m</option>
-                  <option value={45}>45m</option>
-                  <option value={60}>1h</option>
-                  <option value={90}>1.5h</option>
-                  <option value={120}>2h</option>
-                  <option value={180}>3h</option>
-                  <option value={240}>4h</option>
-                </select>
-                <button
-                  onClick={handleAddMission}
-                  disabled={!newMissionTitle.trim()}
-                  className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-                  style={{
-                    backgroundColor: 'var(--color-accent)',
-                    color: 'white',
-                  }}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-
-            {/* Unassigned missions list */}
-            <div className="space-y-2">
-              {unassignedMissions.length === 0 ? (
-                <p className="text-sm py-4 text-center" style={{ color: 'var(--color-text-tertiary)' }}>
-                  No unassigned missions
-                </p>
-              ) : (
-                unassignedMissions.map((mission) => (
-                  <div
-                    key={mission.id}
-                    className="p-3 rounded-lg"
-                    style={{
-                      backgroundColor: 'var(--color-background)',
-                      border: '1px solid var(--color-border)',
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
+                  Scheduled ({assignedMissions.length})
+                </h3>
+                <div className="space-y-2">
+                  {assignedMissions.map((mission) => (
+                    <div
+                      key={mission.id}
+                      className="p-3 rounded-lg"
+                      style={{
+                        backgroundColor: mission.id === currentMission?.id
+                          ? 'var(--color-accent-light)'
+                          : 'var(--color-background)',
+                        border: `1px solid ${mission.id === currentMission?.id ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className="text-xs font-bold px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: 'var(--color-priority-low)',
+                            color: 'white',
+                          }}
+                        >
+                          #{mission.missionNumber}
+                        </span>
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-tertiary)',
+                          }}
+                        >
+                          {formatDuration(mission.duration)}
+                        </span>
+                      </div>
                       <p
-                        className="text-sm font-medium flex-1"
+                        className="text-sm font-medium"
                         style={{ color: 'var(--color-text-primary)' }}
                       >
                         {mission.title}
                       </p>
-                      <button
-                        onClick={() => deleteMission(mission.id)}
-                        className="p-1 rounded hover:opacity-70"
-                        style={{ color: 'var(--color-text-tertiary)' }}
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      {mission.checkpoints.length > 0 && (
+                        <p
+                          className="text-xs mt-1"
+                          style={{ color: 'var(--color-text-tertiary)' }}
+                        >
+                          {mission.checkpoints.length} checkpoint{mission.checkpoints.length !== 1 ? 's' : ''}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-xs px-2 py-1 rounded"
-                        style={{
-                          backgroundColor: 'var(--color-accent-light)',
-                          color: 'var(--color-accent)',
-                        }}
-                      >
-                        {formatDuration(mission.duration)}
-                      </span>
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          const num = Number(e.target.value);
-                          if (num) assignMissionNumber(mission.id, num);
-                        }}
-                        className="flex-1 px-2 py-1 rounded text-xs"
-                        style={{
-                          backgroundColor: 'var(--color-surface)',
-                          color: 'var(--color-text-primary)',
-                          border: '1px solid var(--color-border)',
-                        }}
-                      >
-                        <option value="">Assign #...</option>
-                        {getAvailableMissionNumbers().map(n => (
-                          <option key={n} value={n}>Mission {n}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* Expand to add checkpoints */}
-                    <button
-                      onClick={() => setExpandedMissionId(expandedMissionId === mission.id ? null : mission.id)}
-                      className="mt-2 text-xs w-full text-left"
-                      style={{ color: 'var(--color-accent)' }}
-                    >
-                      {expandedMissionId === mission.id ? '- Hide checkpoints' : '+ Add checkpoints'}
-                    </button>
-                    {expandedMissionId === mission.id && (
-                      <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-                        {mission.checkpoints.length > 0 && (
-                          <div className="space-y-1 mb-2">
-                            {mission.checkpoints.map((cp, idx) => (
-                              <div key={cp.id} className="flex items-center gap-2 text-xs">
-                                <span style={{ color: 'var(--color-text-tertiary)' }}>{idx + 1}.</span>
-                                <span className="flex-1" style={{ color: 'var(--color-text-secondary)' }}>{cp.title}</span>
-                                <span style={{ color: 'var(--color-text-tertiary)' }}>{formatDuration(cp.duration)}</span>
-                                <button
-                                  onClick={() => deleteCheckpoint(mission.id, cp.id)}
-                                  className="p-0.5 hover:opacity-70"
-                                  style={{ color: 'var(--color-text-tertiary)' }}
-                                >
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="flex gap-1">
-                          <input
-                            type="text"
-                            value={newCheckpointTitle}
-                            onChange={(e) => setNewCheckpointTitle(e.target.value)}
-                            onKeyDown={(e) => handleCheckpointKeyDown(e, mission.id)}
-                            placeholder="Checkpoint..."
-                            className="flex-1 px-2 py-1 rounded text-xs"
-                            style={{
-                              backgroundColor: 'var(--color-surface)',
-                              color: 'var(--color-text-primary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          />
-                          <select
-                            value={newCheckpointDuration}
-                            onChange={(e) => setNewCheckpointDuration(Number(e.target.value))}
-                            className="px-1 py-1 rounded text-xs"
-                            style={{
-                              backgroundColor: 'var(--color-surface)',
-                              color: 'var(--color-text-primary)',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          >
-                            <option value={5}>5m</option>
-                            <option value={10}>10m</option>
-                            <option value={15}>15m</option>
-                            <option value={30}>30m</option>
-                            <option value={45}>45m</option>
-                            <option value={60}>1h</option>
-                          </select>
-                          <button
-                            onClick={() => handleAddCheckpoint(mission.id)}
-                            disabled={!newCheckpointTitle.trim()}
-                            className="px-2 py-1 rounded text-xs font-medium disabled:opacity-50"
-                            style={{
-                              backgroundColor: 'var(--color-accent)',
-                              color: 'white',
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            {/* Completed missions (collapsible) */}
-            {completedMissions.length > 0 && (
-              <div className="mt-6">
-                <button
-                  onClick={() => setShowCompletedList(!showCompletedList)}
-                  className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2"
+            {/* Unassigned missions */}
+            {unassignedMissions.length > 0 && (
+              <div>
+                <h3
+                  className="text-xs font-medium mb-2"
                   style={{ color: 'var(--color-text-tertiary)' }}
                 >
-                  <span>Completed ({completedMissions.length})</span>
-                  <svg
-                    className={`w-3 h-3 transition-transform ${showCompletedList ? 'rotate-180' : ''}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showCompletedList && (
-                  <div className="space-y-1">
-                    {completedMissions.map(m => (
-                      <div
-                        key={m.id}
-                        className="flex items-center gap-2 p-2 rounded text-xs"
-                        style={{ backgroundColor: 'var(--color-background)' }}
+                  Unscheduled ({unassignedMissions.length})
+                </h3>
+                <div className="space-y-2">
+                  {unassignedMissions.map((mission) => (
+                    <div
+                      key={mission.id}
+                      className="p-3 rounded-lg"
+                      style={{
+                        backgroundColor: 'var(--color-background)',
+                        border: '1px solid var(--color-border)',
+                        opacity: 0.7,
+                      }}
+                    >
+                      <p
+                        className="text-sm"
+                        style={{ color: 'var(--color-text-secondary)' }}
                       >
-                        <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="var(--color-priority-low)">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span className="flex-1 line-through" style={{ color: 'var(--color-text-tertiary)' }}>
-                          {m.title}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        {mission.title}
+                      </p>
+                      <p
+                        className="text-xs mt-1"
+                        style={{ color: 'var(--color-text-tertiary)' }}
+                      >
+                        {formatDuration(mission.duration)} - Not scheduled
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {assignedMissions.length === 0 && unassignedMissions.length === 0 && (
+              <div className="text-center py-8">
+                <p style={{ color: 'var(--color-text-tertiary)' }}>
+                  No missions yet
+                </p>
+                <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Go to Scheduler to add missions
+                </p>
               </div>
             )}
           </div>
@@ -435,14 +264,12 @@ export function TodayView({ date }: TodayViewProps) {
                     borderColor: 'var(--color-border)',
                   }}
                 >
-                  {/* Hour label */}
                   <div
                     className="w-20 flex-shrink-0 px-3 py-2 text-xs font-medium"
                     style={{ color: 'var(--color-text-tertiary)' }}
                   >
                     {formatHour(hour)}
                   </div>
-                  {/* Hour cell */}
                   <div
                     className="flex-1 border-l"
                     style={{ borderColor: 'var(--color-border)' }}
@@ -459,11 +286,10 @@ export function TodayView({ date }: TodayViewProps) {
                   const isExpanded = expandedTimelineMissionId === mission.id;
                   const missionState = getMissionState(mission);
 
-                  // State-based border colors
                   const getBorderColor = () => {
                     if (isCurrent && isExpanded) return 'var(--color-accent)';
                     if (missionState === 'needs-setup') return 'var(--color-priority-high)';
-                    return 'var(--color-priority-low)'; // ready state
+                    return 'var(--color-priority-low)';
                   };
 
                   return (
@@ -485,7 +311,6 @@ export function TodayView({ date }: TodayViewProps) {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          {/* Mission number badge + state indicator */}
                           <div className="flex items-center gap-2 mb-1">
                             <span
                               className="text-xs font-bold px-2 py-0.5 rounded"
@@ -509,21 +334,8 @@ export function TodayView({ date }: TodayViewProps) {
                                 {missionState === 'needs-setup' ? 'Needs Setup' : 'Ready'}
                               </span>
                             )}
-                            {!isCurrent && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  assignMissionNumber(mission.id, undefined);
-                                }}
-                                className="text-xs px-1 hover:opacity-70"
-                                style={{ color: 'var(--color-text-tertiary)' }}
-                              >
-                                Remove
-                              </button>
-                            )}
                           </div>
 
-                          {/* Title - only visible for current mission or expanded */}
                           {isVisible ? (
                             <>
                               <p
@@ -559,7 +371,6 @@ export function TodayView({ date }: TodayViewProps) {
                           )}
                         </div>
 
-                        {/* Duration */}
                         <div
                           className="text-xs font-medium px-2 py-1 rounded ml-2"
                           style={{
@@ -578,7 +389,6 @@ export function TodayView({ date }: TodayViewProps) {
                           style={{ borderColor: 'var(--color-border)' }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {/* Existing checkpoints */}
                           {mission.checkpoints.length > 0 && (
                             <div className="space-y-2 mb-3">
                               {mission.checkpoints.map((cp, cpIdx) => (
@@ -684,7 +494,7 @@ export function TodayView({ date }: TodayViewProps) {
                         </div>
                       )}
 
-                      {/* Checkpoint progress bar (when not expanded) */}
+                      {/* Checkpoint progress bar */}
                       {!isExpanded && isVisible && mission.checkpoints.length > 0 && (
                         <div className="mt-2 flex gap-1">
                           {mission.checkpoints.map(cp => (
@@ -705,7 +515,7 @@ export function TodayView({ date }: TodayViewProps) {
                 })}
               </div>
 
-              {/* Empty state when no assigned missions */}
+              {/* Empty state */}
               {assignedMissions.length === 0 && (
                 <div
                   className="absolute inset-0 flex items-center justify-center"
@@ -719,7 +529,7 @@ export function TodayView({ date }: TodayViewProps) {
                       No missions scheduled
                     </p>
                     <p style={{ color: 'var(--color-text-tertiary)' }}>
-                      Add missions in the sidebar and assign them a number to see them on the timeline
+                      Go to Scheduler to add and schedule missions
                     </p>
                   </div>
                 </div>
