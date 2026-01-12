@@ -36,6 +36,7 @@ export function SchedulerView() {
     getAssignedMissions,
     getUnassignedMissions,
     addCheckpoint,
+    deleteCheckpoint,
   } = useDayStart();
 
   const { aiSettings, breakdownFlow, startBreakdown, cancelBreakdown } = useAI();
@@ -49,6 +50,10 @@ export function SchedulerView() {
   const [showAddMissionClassification, setShowAddMissionClassification] = useState(false);
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
   const [expandedListItemId, setExpandedListItemId] = useState<string | null>(null);
+
+  // For adding checkpoints to existing missions
+  const [newCheckpointTitle, setNewCheckpointTitle] = useState('');
+  const [newCheckpointDuration, setNewCheckpointDuration] = useState(15);
 
   // For adding to missions list
   const [showAddToList, setShowAddToList] = useState(false);
@@ -138,27 +143,20 @@ export function SchedulerView() {
   const handleBreakdownAccept = useCallback((checkpoints: GeneratedCheckpoint[], totalMinutes: number) => {
     if (!pendingMissionForBreakdown) return;
 
-    // Create the mission
+    // Create the mission with checkpoints in one atomic operation
+    const checkpointsForMission = checkpoints.map(cp => ({
+      title: cp.title,
+      duration: cp.estimatedMinutes,
+    }));
+
     addMissionToDay(
       selectedDateStr,
       pendingMissionForBreakdown.title,
       totalMinutes,
       pendingMissionForBreakdown.cognitive,
-      pendingMissionForBreakdown.mvs
+      pendingMissionForBreakdown.mvs,
+      checkpointsForMission
     );
-
-    // Get the newly created mission ID (it will be the last one added)
-    // We need to add checkpoints after the mission is created
-    // For now, we'll use a slight delay to ensure the state has updated
-    setTimeout(() => {
-      const missions = getMissionsForDay(selectedDateStr);
-      const newMission = missions.find(m => m.title === pendingMissionForBreakdown.title);
-      if (newMission) {
-        checkpoints.forEach(cp => {
-          addCheckpoint(newMission.id, cp.title, cp.estimatedMinutes);
-        });
-      }
-    }, 100);
 
     // Reset form
     setNewMissionTitle('');
@@ -167,7 +165,7 @@ export function SchedulerView() {
     setNewMissionMVS(30);
     setShowAddMissionClassification(false);
     setPendingMissionForBreakdown(null);
-  }, [pendingMissionForBreakdown, selectedDateStr, addMissionToDay, getMissionsForDay, addCheckpoint]);
+  }, [pendingMissionForBreakdown, selectedDateStr, addMissionToDay]);
 
   const handleBreakdownCancel = useCallback(() => {
     setPendingMissionForBreakdown(null);
@@ -804,8 +802,8 @@ export function SchedulerView() {
                     className="p-4 border-t"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-background)' }}
                   >
-                    {mission.checkpoints.length > 0 ? (
-                      <div className="space-y-2">
+                    {mission.checkpoints.length > 0 && (
+                      <div className="space-y-2 mb-4">
                         {mission.checkpoints.map((cp, idx) => (
                           <div
                             key={cp.id}
@@ -836,15 +834,78 @@ export function SchedulerView() {
                             >
                               {formatDuration(cp.duration)}
                             </span>
+                            <button
+                              onClick={() => deleteCheckpoint(mission.id, cp.id)}
+                              className="p-1 rounded hover:opacity-70"
+                              style={{ color: 'var(--color-text-tertiary)' }}
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
                         ))}
                       </div>
-                    ) : (
+                    )}
+
+                    {/* Add checkpoint form */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newCheckpointTitle}
+                        onChange={(e) => setNewCheckpointTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newCheckpointTitle.trim()) {
+                            addCheckpoint(mission.id, newCheckpointTitle.trim(), newCheckpointDuration);
+                            setNewCheckpointTitle('');
+                          }
+                        }}
+                        placeholder="Add checkpoint..."
+                        className="flex-1 px-3 py-2 rounded-lg text-sm"
+                        style={{
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text-primary)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      />
+                      <select
+                        value={newCheckpointDuration}
+                        onChange={(e) => setNewCheckpointDuration(Number(e.target.value))}
+                        className="px-2 py-2 rounded-lg text-sm"
+                        style={{
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text-primary)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <option value={5}>5m</option>
+                        <option value={10}>10m</option>
+                        <option value={15}>15m</option>
+                        <option value={30}>30m</option>
+                        <option value={45}>45m</option>
+                        <option value={60}>1h</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (newCheckpointTitle.trim()) {
+                            addCheckpoint(mission.id, newCheckpointTitle.trim(), newCheckpointDuration);
+                            setNewCheckpointTitle('');
+                          }
+                        }}
+                        disabled={!newCheckpointTitle.trim()}
+                        className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}
+                      >
+                        Add
+                      </button>
+                    </div>
+
+                    {mission.checkpoints.length === 0 && (
                       <p
-                        className="text-center py-4 text-sm"
+                        className="text-center py-2 text-xs mt-2"
                         style={{ color: 'var(--color-text-tertiary)' }}
                       >
-                        No checkpoints. Add checkpoints when creating missions in the missions list.
+                        No checkpoints yet. Add checkpoints above or use AI Magic Breakdown.
                       </p>
                     )}
                   </div>

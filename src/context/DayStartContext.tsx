@@ -74,7 +74,7 @@ interface DayStartContextType {
   scheduleMissionFromList: (listItemId: string, date: string) => void;
 
   // Scheduled days management
-  addMissionToDay: (date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => void;
+  addMissionToDay: (date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession, checkpoints?: { title: string; duration: number }[]) => string;
   getMissionsForDay: (date: string) => Mission[];
   moveMissionToDay: (missionId: string, fromDate: string, toDate: string) => void;
 
@@ -745,14 +745,21 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
   }, [missionsList, dayConfig, scheduledDays]);
 
   // Scheduled days management
-  const addMissionToDay = useCallback((date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession) => {
+  const addMissionToDay = useCallback((date: string, title: string, duration: number, cognitiveLevel: CognitiveLevel, minimumViableSession: MinimumViableSession, checkpoints?: { title: string; duration: number }[]): string => {
+    const missionId = crypto.randomUUID();
     const newMission: Mission = {
-      id: crypto.randomUUID(),
+      id: missionId,
       title,
       duration,
       order: 0,
       completed: false,
-      checkpoints: [],
+      checkpoints: (checkpoints || []).map((cp, idx) => ({
+        id: crypto.randomUUID(),
+        title: cp.title,
+        duration: cp.duration,
+        order: idx,
+        completed: false,
+      })),
       currentCheckpointIndex: 0,
       scheduledDate: date,
       cognitiveLevel,
@@ -783,6 +790,8 @@ export function DayStartProvider({ children }: { children: ReactNode }) {
       setScheduledDays(updatedDays);
       saveToStorage(STORAGE_KEYS.scheduledDays, updatedDays);
     }
+
+    return missionId;
   }, [dayConfig, scheduledDays]);
 
   const getMissionsForDay = useCallback((date: string): Mission[] => {
