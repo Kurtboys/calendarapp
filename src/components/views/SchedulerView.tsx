@@ -70,8 +70,12 @@ export function SchedulerView() {
 
   const effectiveDate = getEffectiveDate();
   const selectedDateStr = formatDate(selectedDate);
+  const effectiveDateStr = formatDate(effectiveDate);
   const configDateStr = dayConfig?.date;
-  const isToday = selectedDateStr === formatDate(effectiveDate) && configDateStr === selectedDateStr;
+  const isToday = selectedDateStr === effectiveDateStr && configDateStr === selectedDateStr;
+
+  // Compare dates as strings to avoid timestamp comparison issues
+  const isSelectedDateValid = selectedDateStr >= effectiveDateStr;
 
   // Get missions for selected day
   const selectedDayMissions = getMissionsForDay(selectedDateStr);
@@ -494,12 +498,12 @@ export function SchedulerView() {
               Today - Edit missions below
             </p>
           )}
-          {!isToday && selectedDate >= effectiveDate && (
+          {!isToday && isSelectedDateValid && (
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
               Future day - Schedule missions for this day
             </p>
           )}
-          {selectedDate < effectiveDate && (
+          {!isSelectedDateValid && (
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
               Past day
             </p>
@@ -507,7 +511,7 @@ export function SchedulerView() {
         </div>
 
         {/* Add new mission (for today and future days) */}
-        {selectedDate >= effectiveDate && (
+        {isSelectedDateValid && (
           <div
             className="mb-6 p-4 rounded-xl"
             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
