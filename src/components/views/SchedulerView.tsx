@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import { useDayStart } from '../../context/DayStartContext';
-import type { MissionCategory, MissionListItem, CognitiveLevel, MinimumViableSession } from '../../types';
+import { useAI } from '../../context/AIContext';
+import type { MissionCategory, MissionListItem, CognitiveLevel, MinimumViableSession, BreakdownLevel, GeneratedCheckpoint } from '../../types';
 import { COGNITIVE_LEVELS, MVS_OPTIONS } from '../../types';
 import { formatDuration, getEffectiveDate, getDayName, getMonthName, formatDate, getMonthGrid } from '../../utils/date';
+import { MagicBreakdownOverlay, BreakdownLevelSelector } from '../MagicBreakdown';
 
 const CATEGORY_LABELS: Record<MissionCategory, string> = {
   'need-to-do-soon': 'Need to do soon',
@@ -33,7 +35,10 @@ export function SchedulerView() {
     assignMissionNumber,
     getAssignedMissions,
     getUnassignedMissions,
+    addCheckpoint,
   } = useDayStart();
+
+  const { aiSettings, breakdownFlow, startBreakdown, cancelBreakdown } = useAI();
 
   const [selectedDate, setSelectedDate] = useState(() => getEffectiveDate());
   const [calendarMonth, setCalendarMonth] = useState(() => getEffectiveDate());
@@ -52,6 +57,16 @@ export function SchedulerView() {
   const [newListMissionCategory, setNewListMissionCategory] = useState<MissionCategory | ''>('');
   const [newListMissionCognitive, setNewListMissionCognitive] = useState<CognitiveLevel>(3);
   const [newListMissionMVS, setNewListMissionMVS] = useState<MinimumViableSession>(30);
+
+  // For Magic Breakdown
+  const [showBreakdownLevelPicker, setShowBreakdownLevelPicker] = useState(false);
+  const [selectedBreakdownLevel, setSelectedBreakdownLevel] = useState<BreakdownLevel>(3);
+  const [pendingMissionForBreakdown, setPendingMissionForBreakdown] = useState<{
+    title: string;
+    duration: number;
+    cognitive: CognitiveLevel;
+    mvs: MinimumViableSession;
+  } | null>(null);
 
   const effectiveDate = getEffectiveDate();
   const selectedDateStr = formatDate(selectedDate);
@@ -97,6 +112,63 @@ export function SchedulerView() {
   const handleScheduleFromList = useCallback((listItemId: string) => {
     scheduleMissionFromList(listItemId, selectedDateStr);
   }, [scheduleMissionFromList, selectedDateStr]);
+
+  // Start Magic Breakdown flow
+  const handleStartBreakdown = useCallback(() => {
+    if (!newMissionTitle.trim()) return;
+    setPendingMissionForBreakdown({
+      title: newMissionTitle.trim(),
+      duration: newMissionDuration,
+      cognitive: newMissionCognitive,
+      mvs: newMissionMVS,
+    });
+    setShowBreakdownLevelPicker(true);
+  }, [newMissionTitle, newMissionDuration, newMissionCognitive, newMissionMVS]);
+
+  const handleConfirmBreakdownLevel = useCallback(async () => {
+    if (!pendingMissionForBreakdown) return;
+    setShowBreakdownLevelPicker(false);
+    await startBreakdown(pendingMissionForBreakdown.title, selectedBreakdownLevel);
+  }, [pendingMissionForBreakdown, selectedBreakdownLevel, startBreakdown]);
+
+  const handleBreakdownAccept = useCallback((checkpoints: GeneratedCheckpoint[], totalMinutes: number) => {
+    if (!pendingMissionForBreakdown) return;
+
+    // Create the mission
+    addMissionToDay(
+      selectedDateStr,
+      pendingMissionForBreakdown.title,
+      totalMinutes,
+      pendingMissionForBreakdown.cognitive,
+      pendingMissionForBreakdown.mvs
+    );
+
+    // Get the newly created mission ID (it will be the last one added)
+    // We need to add checkpoints after the mission is created
+    // For now, we'll use a slight delay to ensure the state has updated
+    setTimeout(() => {
+      const missions = getMissionsForDay(selectedDateStr);
+      const newMission = missions.find(m => m.title === pendingMissionForBreakdown.title);
+      if (newMission) {
+        checkpoints.forEach(cp => {
+          addCheckpoint(newMission.id, cp.title, cp.estimatedMinutes);
+        });
+      }
+    }, 100);
+
+    // Reset form
+    setNewMissionTitle('');
+    setNewMissionDuration(30);
+    setNewMissionCognitive(3);
+    setNewMissionMVS(30);
+    setShowAddMissionClassification(false);
+    setPendingMissionForBreakdown(null);
+  }, [pendingMissionForBreakdown, selectedDateStr, addMissionToDay, getMissionsForDay, addCheckpoint]);
+
+  const handleBreakdownCancel = useCallback(() => {
+    setPendingMissionForBreakdown(null);
+    cancelBreakdown();
+  }, [cancelBreakdown]);
 
   // Get available mission numbers (1-15 minus already assigned)
   const getAvailableMissionNumbers = (currentMissionId?: string) => {
@@ -491,6 +563,24 @@ export function SchedulerView() {
               >
                 Classify
               </button>
+              {/* Magic Breakdown button - only show if API key is configured */}
+              {aiSettings.apiKey && (
+                <button
+                  onClick={handleStartBreakdown}
+                  disabled={!newMissionTitle.trim()}
+                  className="px-4 py-3 rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
+                  style={{
+                    backgroundColor: 'var(--color-accent)',
+                    color: 'white',
+                  }}
+                  title="Use AI to break down this task"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Magic
+                </button>
+              )}
             </div>
 
             {/* Classification section */}
@@ -760,6 +850,74 @@ export function SchedulerView() {
           )}
         </div>
       </div>
+
+      {/* Breakdown Level Picker Modal */}
+      {showBreakdownLevelPicker && pendingMissionForBreakdown && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 z-50"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-6"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2
+                className="text-xl font-bold"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                Magic Breakdown
+              </h2>
+              <button
+                onClick={() => {
+                  setShowBreakdownLevelPicker(false);
+                  setPendingMissionForBreakdown(null);
+                }}
+                className="p-2 rounded-lg hover:opacity-70"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Breaking down: <strong>{pendingMissionForBreakdown.title}</strong>
+            </p>
+
+            <BreakdownLevelSelector
+              selectedLevel={selectedBreakdownLevel}
+              onSelectLevel={setSelectedBreakdownLevel}
+            />
+
+            <button
+              onClick={handleConfirmBreakdownLevel}
+              className="w-full mt-6 py-3 rounded-xl font-medium"
+              style={{
+                backgroundColor: 'var(--color-accent)',
+                color: 'white',
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Magic Breakdown Overlay */}
+      {breakdownFlow && (
+        <MagicBreakdownOverlay
+          onAccept={handleBreakdownAccept}
+          onCancel={handleBreakdownCancel}
+        />
+      )}
     </div>
   );
 }

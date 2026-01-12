@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { DayStartProvider, useDayStart } from './context/DayStartContext';
+import { AIProvider } from './context/AIContext';
 import { Header } from './components/Header';
 import { HomePage } from './components/HomePage';
 import { LogoutFlowOverlay } from './components/LogoutFlowOverlay';
@@ -134,7 +135,9 @@ function App() {
   return (
     <ThemeProvider>
       <DayStartProvider>
-        <CalendarApp />
+        <AIProvider>
+          <CalendarApp />
+        </AIProvider>
       </DayStartProvider>
     </ThemeProvider>
   );
