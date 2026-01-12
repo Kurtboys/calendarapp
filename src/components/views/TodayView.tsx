@@ -138,16 +138,16 @@ export function TodayView({ date }: TodayViewProps) {
 
   // Calculate mission block positions on timeline based on Parkinson's Law
   const getMissionBlockStyle = (missionIndex: number) => {
-    let topMinutes = 0;
-    let extraHeight = 0;
+    let topPixels = 0;
+    // Accumulate top position using effective rendered heights (with minimum)
     for (let i = 0; i < missionIndex; i++) {
-      topMinutes += assignedMissions[i].duration;
+      const prevHeightPixels = (assignedMissions[i].duration / 60) * hourHeight;
+      topPixels += Math.max(prevHeightPixels, 60); // Use same minimum as rendered height
       if (assignedMissions[i].id === expandedTimelineMissionId) {
-        extraHeight += 200;
+        topPixels += 200;
       }
     }
     const mission = assignedMissions[missionIndex];
-    const topPixels = (topMinutes / 60) * hourHeight + extraHeight;
     const heightPixels = (mission.duration / 60) * hourHeight;
     const isExpanded = mission.id === expandedTimelineMissionId;
     const expandedExtra = isExpanded ? 200 : 0;
