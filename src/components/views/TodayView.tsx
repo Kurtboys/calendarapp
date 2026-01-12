@@ -45,7 +45,6 @@ export function TodayView({ date }: TodayViewProps) {
     assignMissionNumber,
     startMission,
     getCurrentMission,
-    getCurrentCheckpoint,
     getAssignedMissions,
     getUnassignedMissions,
   } = useDayStart();
@@ -55,6 +54,9 @@ export function TodayView({ date }: TodayViewProps) {
   const [newCheckpointTitle, setNewCheckpointTitle] = useState('');
   const [newCheckpointDuration, setNewCheckpointDuration] = useState(15);
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
+  const [expandedTimelineMissionId, setExpandedTimelineMissionId] = useState<string | null>(null);
+  const [timelineCheckpointTitle, setTimelineCheckpointTitle] = useState('');
+  const [timelineCheckpointDuration, setTimelineCheckpointDuration] = useState(15);
   const [showCompletedList, setShowCompletedList] = useState(false);
 
   const effectiveDate = getEffectiveDate();
@@ -63,7 +65,6 @@ export function TodayView({ date }: TodayViewProps) {
   const assignedMissions = getAssignedMissions();
   const unassignedMissions = getUnassignedMissions();
   const currentMission = getCurrentMission();
-  const currentCheckpoint = getCurrentCheckpoint();
   const allMissions = dayConfig?.missions || [];
   const completedMissions = allMissions.filter(m => m.completed).sort((a, b) => {
     if (a.completedAt && b.completedAt) {
@@ -89,6 +90,13 @@ export function TodayView({ date }: TodayViewProps) {
     setNewCheckpointDuration(15);
   }, [newCheckpointTitle, newCheckpointDuration, addCheckpoint]);
 
+  const handleAddTimelineCheckpoint = useCallback((missionId: string) => {
+    if (!timelineCheckpointTitle.trim()) return;
+    addCheckpoint(missionId, timelineCheckpointTitle.trim(), timelineCheckpointDuration);
+    setTimelineCheckpointTitle('');
+    setTimelineCheckpointDuration(15);
+  }, [timelineCheckpointTitle, timelineCheckpointDuration, addCheckpoint]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleAddMission();
@@ -101,27 +109,50 @@ export function TodayView({ date }: TodayViewProps) {
     }
   };
 
-  // Calculate mission block positions on timeline based on Parkinson's Law
-  const getMissionBlockStyle = (missionIndex: number) => {
-    let topMinutes = 0;
-    for (let i = 0; i < missionIndex; i++) {
-      topMinutes += assignedMissions[i].duration;
+  const handleTimelineCheckpointKeyDown = (e: React.KeyboardEvent, missionId: string) => {
+    if (e.key === 'Enter') {
+      handleAddTimelineCheckpoint(missionId);
     }
-    const mission = assignedMissions[missionIndex];
-    const topPixels = (topMinutes / 60) * hourHeight;
-    const heightPixels = (mission.duration / 60) * hourHeight;
-    return { top: topPixels, height: Math.max(heightPixels, 40) }; // minimum 40px height
   };
 
-  // Check if mission details should be visible (only current mission)
+  // Calculate mission block positions on timeline based on Parkinson's Law
+  // Account for expanded mission taking more space
+  const getMissionBlockStyle = (missionIndex: number) => {
+    let topMinutes = 0;
+    let extraHeight = 0;
+    for (let i = 0; i < missionIndex; i++) {
+      topMinutes += assignedMissions[i].duration;
+      // Add extra height if previous mission is expanded
+      if (assignedMissions[i].id === expandedTimelineMissionId) {
+        extraHeight += 200; // Extra space for expanded checkpoints area
+      }
+    }
+    const mission = assignedMissions[missionIndex];
+    const topPixels = (topMinutes / 60) * hourHeight + extraHeight;
+    const heightPixels = (mission.duration / 60) * hourHeight;
+    const isExpanded = mission.id === expandedTimelineMissionId;
+    // If expanded, add extra height for checkpoint area
+    const expandedExtra = isExpanded ? 200 : 0;
+    return { top: topPixels, height: Math.max(heightPixels, 60) + expandedExtra };
+  };
+
+  // Check if mission details should be visible (only current mission or expanded)
   const isMissionVisible = (missionId: string) => {
-    return currentMission?.id === missionId;
+    return currentMission?.id === missionId || expandedTimelineMissionId === missionId;
   };
 
   // Get available mission numbers (1-15 minus already assigned)
   const getAvailableMissionNumbers = () => {
     const usedNumbers = assignedMissions.map(m => m.missionNumber).filter(n => n !== undefined);
     return Array.from({ length: 15 }, (_, i) => i + 1).filter(n => !usedNumbers.includes(n));
+  };
+
+  // Get mission state for visual indicators
+  const getMissionState = (mission: typeof assignedMissions[0]) => {
+    if (mission.checkpoints.length === 0) {
+      return 'needs-setup';
+    }
+    return 'ready';
   };
 
   if (!isToday) {
@@ -425,33 +456,59 @@ export function TodayView({ date }: TodayViewProps) {
                   const style = getMissionBlockStyle(idx);
                   const isVisible = isMissionVisible(mission.id);
                   const isCurrent = currentMission?.id === mission.id;
+                  const isExpanded = expandedTimelineMissionId === mission.id;
+                  const missionState = getMissionState(mission);
+
+                  // State-based border colors
+                  const getBorderColor = () => {
+                    if (isCurrent && isExpanded) return 'var(--color-accent)';
+                    if (missionState === 'needs-setup') return 'var(--color-priority-high)';
+                    return 'var(--color-priority-low)'; // ready state
+                  };
 
                   return (
                     <div
                       key={mission.id}
-                      className={`absolute left-0 right-0 rounded-lg p-3 transition-all ${isCurrent ? 'cursor-pointer hover:scale-[1.01]' : ''}`}
+                      className={`absolute left-0 right-0 rounded-lg p-3 transition-all cursor-pointer hover:scale-[1.005]`}
                       style={{
                         top: style.top + 4,
                         height: style.height - 8,
-                        backgroundColor: isCurrent ? 'var(--color-accent)' : 'var(--color-surface)',
-                        border: `2px solid ${isCurrent ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                        backgroundColor: 'var(--color-surface)',
+                        border: `2px solid ${getBorderColor()}`,
                         opacity: isVisible ? 1 : 0.6,
                       }}
-                      onClick={() => isCurrent && startMission(mission.id)}
+                      onClick={() => {
+                        if (isCurrent) {
+                          setExpandedTimelineMissionId(isExpanded ? null : mission.id);
+                        }
+                      }}
                     >
-                      <div className="flex items-start justify-between h-full">
+                      <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          {/* Mission number badge */}
+                          {/* Mission number badge + state indicator */}
                           <div className="flex items-center gap-2 mb-1">
                             <span
                               className="text-xs font-bold px-2 py-0.5 rounded"
                               style={{
-                                backgroundColor: isCurrent ? 'rgba(255,255,255,0.2)' : 'var(--color-accent-light)',
-                                color: isCurrent ? 'white' : 'var(--color-accent)',
+                                backgroundColor: 'var(--color-accent-light)',
+                                color: 'var(--color-accent)',
                               }}
                             >
                               Mission {mission.missionNumber}
                             </span>
+                            {isCurrent && (
+                              <span
+                                className="text-xs px-2 py-0.5 rounded"
+                                style={{
+                                  backgroundColor: missionState === 'needs-setup'
+                                    ? 'var(--color-priority-high)'
+                                    : 'var(--color-priority-low)',
+                                  color: 'white',
+                                }}
+                              >
+                                {missionState === 'needs-setup' ? 'Needs Setup' : 'Ready'}
+                              </span>
+                            )}
                             {!isCurrent && (
                               <button
                                 onClick={(e) => {
@@ -466,29 +523,29 @@ export function TodayView({ date }: TodayViewProps) {
                             )}
                           </div>
 
-                          {/* Title - only visible for current mission */}
+                          {/* Title - only visible for current mission or expanded */}
                           {isVisible ? (
                             <>
                               <p
                                 className="font-medium truncate"
-                                style={{ color: isCurrent ? 'white' : 'var(--color-text-primary)' }}
+                                style={{ color: 'var(--color-text-primary)' }}
                               >
                                 {mission.title}
                               </p>
-                              {mission.checkpoints.length > 0 && currentCheckpoint && (
-                                <p
-                                  className="text-xs mt-1 truncate"
-                                  style={{ color: isCurrent ? 'rgba(255,255,255,0.8)' : 'var(--color-text-tertiary)' }}
-                                >
-                                  Next: {currentCheckpoint.title}
-                                </p>
-                              )}
-                              {isCurrent && (
+                              {!isExpanded && mission.checkpoints.length > 0 && (
                                 <p
                                   className="text-xs mt-1"
-                                  style={{ color: 'rgba(255,255,255,0.8)' }}
+                                  style={{ color: 'var(--color-text-tertiary)' }}
                                 >
-                                  Click to start
+                                  {mission.checkpoints.length} checkpoint{mission.checkpoints.length !== 1 ? 's' : ''}
+                                </p>
+                              )}
+                              {isCurrent && !isExpanded && (
+                                <p
+                                  className="text-xs mt-1"
+                                  style={{ color: 'var(--color-accent)' }}
+                                >
+                                  Click to set up checkpoints
                                 </p>
                               )}
                             </>
@@ -506,16 +563,129 @@ export function TodayView({ date }: TodayViewProps) {
                         <div
                           className="text-xs font-medium px-2 py-1 rounded ml-2"
                           style={{
-                            backgroundColor: isCurrent ? 'rgba(255,255,255,0.2)' : 'var(--color-background)',
-                            color: isCurrent ? 'white' : 'var(--color-text-secondary)',
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-secondary)',
                           }}
                         >
                           {formatDuration(mission.duration)}
                         </div>
                       </div>
 
-                      {/* Checkpoint progress bar */}
-                      {isVisible && mission.checkpoints.length > 0 && (
+                      {/* Expanded: Checkpoint list + add form + Start button */}
+                      {isExpanded && isCurrent && (
+                        <div
+                          className="mt-3 pt-3 border-t"
+                          style={{ borderColor: 'var(--color-border)' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Existing checkpoints */}
+                          {mission.checkpoints.length > 0 && (
+                            <div className="space-y-2 mb-3">
+                              {mission.checkpoints.map((cp, cpIdx) => (
+                                <div
+                                  key={cp.id}
+                                  className="flex items-center gap-2 p-2 rounded"
+                                  style={{ backgroundColor: 'var(--color-background)' }}
+                                >
+                                  <span
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+                                    style={{
+                                      backgroundColor: 'var(--color-accent-light)',
+                                      color: 'var(--color-accent)',
+                                    }}
+                                  >
+                                    {cpIdx + 1}
+                                  </span>
+                                  <span
+                                    className="flex-1 text-sm"
+                                    style={{ color: 'var(--color-text-primary)' }}
+                                  >
+                                    {cp.title}
+                                  </span>
+                                  <span
+                                    className="text-xs px-2 py-0.5 rounded"
+                                    style={{
+                                      backgroundColor: 'var(--color-surface)',
+                                      color: 'var(--color-text-tertiary)',
+                                    }}
+                                  >
+                                    {formatDuration(cp.duration)}
+                                  </span>
+                                  <button
+                                    onClick={() => deleteCheckpoint(mission.id, cp.id)}
+                                    className="p-1 rounded hover:opacity-70"
+                                    style={{ color: 'var(--color-text-tertiary)' }}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Add checkpoint form */}
+                          <div className="flex gap-2 mb-3">
+                            <input
+                              type="text"
+                              value={timelineCheckpointTitle}
+                              onChange={(e) => setTimelineCheckpointTitle(e.target.value)}
+                              onKeyDown={(e) => handleTimelineCheckpointKeyDown(e, mission.id)}
+                              placeholder="Add checkpoint..."
+                              className="flex-1 px-3 py-2 rounded-lg text-sm"
+                              style={{
+                                backgroundColor: 'var(--color-background)',
+                                color: 'var(--color-text-primary)',
+                                border: '1px solid var(--color-border)',
+                              }}
+                            />
+                            <select
+                              value={timelineCheckpointDuration}
+                              onChange={(e) => setTimelineCheckpointDuration(Number(e.target.value))}
+                              className="px-2 py-2 rounded-lg text-sm"
+                              style={{
+                                backgroundColor: 'var(--color-background)',
+                                color: 'var(--color-text-primary)',
+                                border: '1px solid var(--color-border)',
+                              }}
+                            >
+                              <option value={5}>5m</option>
+                              <option value={10}>10m</option>
+                              <option value={15}>15m</option>
+                              <option value={30}>30m</option>
+                              <option value={45}>45m</option>
+                              <option value={60}>1h</option>
+                            </select>
+                            <button
+                              onClick={() => handleAddTimelineCheckpoint(mission.id)}
+                              disabled={!timelineCheckpointTitle.trim()}
+                              className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                              style={{
+                                backgroundColor: 'var(--color-accent)',
+                                color: 'white',
+                              }}
+                            >
+                              Add
+                            </button>
+                          </div>
+
+                          {/* Start button */}
+                          <button
+                            onClick={() => startMission(mission.id)}
+                            className="w-full py-3 rounded-xl text-lg font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            style={{
+                              backgroundColor: 'var(--color-priority-low)',
+                              color: 'white',
+                            }}
+                          >
+                            START MISSION
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Checkpoint progress bar (when not expanded) */}
+                      {!isExpanded && isVisible && mission.checkpoints.length > 0 && (
                         <div className="mt-2 flex gap-1">
                           {mission.checkpoints.map(cp => (
                             <div
@@ -523,8 +693,8 @@ export function TodayView({ date }: TodayViewProps) {
                               className="flex-1 h-1.5 rounded-full"
                               style={{
                                 backgroundColor: cp.completed
-                                  ? (isCurrent ? 'rgba(255,255,255,0.8)' : 'var(--color-priority-low)')
-                                  : (isCurrent ? 'rgba(255,255,255,0.3)' : 'var(--color-border)'),
+                                  ? 'var(--color-priority-low)'
+                                  : 'var(--color-border)',
                               }}
                             />
                           ))}
